@@ -1,0 +1,33 @@
+bridge/agent-pet-bridge.js
+  s_ae7e491749ac33::t_d85d8823c31e3e 1-239
+package.json
+  s_be57b0e2f23bb7::t_0cd9336640cf62 1-39
+src/state-store.js
+  s_be57b0e2f23bb7::t_fec997617ee3a3 1-158
+tests/state-store.test.js
+  s_ae7e491749ac33::t_8af97f32ba80fb 1-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "74baf8c295429d3726c6a7adab25ad915db8c3c2",
+  "prompts": {},
+  "sessions": {
+    "s_ae7e491749ac33": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "071fb012-ce72-4840-9bae-709ff840808b",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    },
+    "s_be57b0e2f23bb7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fabf9-1673-7103-8a4c-7045c99155d0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
