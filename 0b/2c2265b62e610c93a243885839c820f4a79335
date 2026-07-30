@@ -1,0 +1,29 @@
+README.md
+  s_8ce5b921fe161e::t_c471aae2409f37 23,27
+package-lock.json
+  s_8ce5b921fe161e::t_d2a97d8d8c2601 3,9
+package.json
+  s_8ce5b921fe161e::t_a3944b47be5ed8 3
+src/renderer/renderer.js
+  s_8ce5b921fe161e::t_6677d98fef4065 32-36,48-51,54-61,191-200,374-479,518,520-522,533-535,547-556,567,569-572,574-577
+tests/desktop-features.test.js
+  s_8ce5b921fe161e::t_1b06686850f8f3 73,82-85
+tests/state-store.test.js
+  s_8ce5b921fe161e::t_d3390d470503cf 42-51,98-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "0b2c2265b62e610c93a243885839c820f4a79335",
+  "prompts": {},
+  "sessions": {
+    "s_8ce5b921fe161e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fad45-8121-79a1-869d-cb94105ce197",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
