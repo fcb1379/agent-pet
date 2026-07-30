@@ -97,7 +97,9 @@ test("release updater compares versions and selects a newer portable release", a
             status: 200,
             headers: { "content-type": "application/json" }
         }),
-        "0.5.0"
+        "0.5.0",
+        "win32",
+        "x64"
     );
     assert.equal(update.updateAvailable, true);
     assert.equal(update.executable.name, "AgentPet-0.6.0-portable.exe");
