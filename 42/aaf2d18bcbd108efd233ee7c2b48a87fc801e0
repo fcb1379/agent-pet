@@ -1,0 +1,19 @@
+.github/workflows/sync-gitee-release.yml
+  s_8b864690008a55::t_92ad79e5593b9f 30-31,63-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "42aaf2d18bcbd108efd233ee7c2b48a87fc801e0",
+  "prompts": {},
+  "sessions": {
+    "s_8b864690008a55": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb246-26fa-7bd3-9e95-60a639e74fdf",
+        "model": "unknown"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
