@@ -1,0 +1,43 @@
+scripts/sync-gitee-release.js
+  s_8b864690008a55::t_c953a91a126918 1-257
+.github/workflows/sync-gitee-release.yml
+  s_8b864690008a55::t_c953a91a126918 1-54
+tests/gitee-release-sync.test.js
+  s_8b864690008a55::t_c953a91a126918 1-124
+README.md
+  s_8ce5b921fe161e::t_337b483a15e12d 25,150-173
+src/main.js
+  s_8ce5b921fe161e::t_80dde2858317e3 588-592,599,871-883
+src/release-updater.js
+  s_8ce5b921fe161e::t_d55ae3346d214f 9-28,83,85-87,91-95,101-102,190
+src/settings-store.js
+  s_8ce5b921fe161e::t_e1e56082e40c42 29,90
+tests/desktop-features.test.js
+  s_8ce5b921fe161e::t_2f000593c39e97 46,68-69
+tests/update-support.test.js
+  s_8ce5b921fe161e::t_e134ef19313adc 18-19,96,98-104,107,109,113-155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "e477a126bff6665af2fcfb34dd7efe879fd61216",
+  "prompts": {},
+  "sessions": {
+    "s_8b864690008a55": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb246-26fa-7bd3-9e95-60a639e74fdf",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_8ce5b921fe161e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fad45-8121-79a1-869d-cb94105ce197",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
