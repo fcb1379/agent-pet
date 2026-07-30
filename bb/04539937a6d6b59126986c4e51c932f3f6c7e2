@@ -1,0 +1,37 @@
+src/release-updater.js
+  s_1c71804c5456fa::t_8ef9165f3bc2e1 1-170
+tests/update-support.test.js
+  s_1c71804c5456fa::t_8ef9165f3bc2e1 1-126
+  s_1c71804c5456fa::t_cd777b9211abc7 127-129
+  s_1c71804c5456fa::t_08a413b88d2333 130-134
+scripts/dependency-bootstrap.js
+  s_1c71804c5456fa::t_8ef9165f3bc2e1 1-123
+  s_1c71804c5456fa::t_f86c400a00db6e 124-126
+  s_1c71804c5456fa::t_a9ed9fa09c086a 127-128
+src/renderer/styles.css
+  s_8ce5b921fe161e::t_604b018e6109df 148,151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "bb04539937a6d6b59126986c4e51c932f3f6c7e2",
+  "prompts": {},
+  "sessions": {
+    "s_1c71804c5456fa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fabe0-c518-7651-90af-22c2f425b6a8",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    },
+    "s_8ce5b921fe161e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fad45-8121-79a1-869d-cb94105ce197",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
