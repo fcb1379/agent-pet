@@ -1,7 +1,7 @@
 {
   "name": "agent-pet",
   "version": "0.5.2",
-  "description": "A Windows desktop pet that reflects Codex and Claude Code activity from Windows and WSL.",
+  "description": "A desktop pet that reflects Codex and Claude Code activity on Windows, WSL and macOS.",
   "main": "src/main.js",
   "type": "commonjs",
   "scripts": {
@@ -15,7 +15,9 @@
     "install-hooks": "node scripts/install-hooks.js",
     "uninstall-hooks": "node scripts/uninstall-hooks.js",
     "simulate": "node scripts/simulate.js",
-    "dist": "electron-builder --win portable"
+    "dist": "npm run dist:win",
+    "dist:win": "electron-builder --win portable",
+    "dist:mac": "electron-builder --mac dmg --arm64"
   },
   "devDependencies": {
     "electron": "^37.2.4",
@@ -43,11 +45,30 @@
         "portable"
       ],
       "artifactName": "AgentPet-${version}-portable.${ext}"
+    },
+    "mac": {
+      "icon": "assets/mascot.png",
+      "category": "public.app-category.developer-tools",
+      "artifactName": "AgentPet-${version}-mac-arm64.${ext}",
+      "hardenedRuntime": true,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "title": "Agent Pet ${version}"
     }
   },
   "dependencies": {
-    "node-win-x64": "24.14.0",
     "sharp": "^0.34.5",
     "upng-js": "^2.1.0"
+  },
+  "optionalDependencies": {
+    "node-win-x64": "24.14.0"
   }
 }

@@ -1,0 +1,49 @@
+name: Build macOS arm64
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/macos-arm64
+    paths:
+      - ".github/workflows/build-macos-arm64.yml"
+      - "assets/**"
+      - "bridge/**"
+      - "scripts/**"
+      - "src/**"
+      - "tests/**"
+      - "package.json"
+      - "package-lock.json"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - run: npm test
+
+      - run: npm run dist:mac
+
+      - name: Create checksum
+        run: for file in dist/AgentPet-*-mac-arm64.dmg; do shasum -a 256 "$file" > "$file.sha256"; done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentPet-macOS-arm64
+          path: |
+            dist/AgentPet-*-mac-arm64.dmg
+            dist/*.sha256
+          if-no-files-found: error

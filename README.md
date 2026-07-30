@@ -1,10 +1,14 @@
 # Agent Pet
 
-Agent Pet 是一个 Windows 桌面宠物，用动画和托盘状态显示以下 Agent 的活动：
+> macOS Apple Silicon 开发与构建说明：[docs/macos-arm64.md](docs/macos-arm64.md)
+
+Agent Pet 是一个 Windows 与 macOS 桌面宠物，用动画和托盘状态显示以下 Agent 的活动：
 
 - Windows Codex CLI
 - WSL Codex CLI
 - Windows Claude Code
+- macOS Apple Silicon Codex CLI
+- macOS Apple Silicon Claude Code
 - WSL Claude Code
 
 支持状态：空闲、执行中、等待输入/授权、完成、错误。完成动画显示 15 秒后自动回到空闲；错误状态显示 60 秒。

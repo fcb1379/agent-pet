@@ -18,7 +18,7 @@ function windowsPathToWsl(windowsPath)
 
 function materializeWslInstaller(localAppData)
 {
-    const root = path.join(localAppData, "AgentPet", "setup-package");
+    const root = path.join(localAppData, "setup-package");
     const scripts = path.join(root, "scripts");
     const bridge = path.join(root, "bridge");
     fs.mkdirSync(scripts, { recursive: true });
@@ -26,33 +26,40 @@ function materializeWslInstaller(localAppData)
     fs.copyFileSync(path.resolve(__dirname, "..", "scripts", "install-hooks.js"), path.join(scripts, "install-hooks.js"));
     fs.copyFileSync(path.resolve(__dirname, "..", "scripts", "hook-config.js"), path.join(scripts, "hook-config.js"));
     fs.copyFileSync(path.resolve(__dirname, "..", "bridge", "agent-pet-bridge.js"), path.join(bridge, "agent-pet-bridge.js"));
+    fs.copyFileSync(path.resolve(__dirname, "..", "bridge", "platform-paths.js"), path.join(bridge, "platform-paths.js"));
     return root;
 }
 
-function installLocalAi(localAppData, execFileSync = childProcess.execFileSync)
+function installLocalAi(agentDataDirectory, execFileSync = childProcess.execFileSync, platform = process.platform)
 {
     const result = {
-        windows: { ok: false, message: "" },
-        wsl: { ok: false, message: "" }
+        platform,
+        local: { ok: false, message: "" },
+        wsl: "win32" === platform ? { ok: false, message: "" } : null
     };
 
     try
     {
         const paths = installHooks({ execFileSync });
         const verification = verifyInstalledBridge(paths, { execFileSync });
-        result.windows = {
+        result.local = {
             ok: true,
             message: `Codex: ${paths.codexHooks}\nClaude: ${paths.claudeSettings}\nSelf-test: ${verification.stateDirectory}`
         };
     }
     catch (error)
     {
-        result.windows.message = error.message;
+        result.local.message = error.message;
+    }
+
+    if ("win32" !== platform)
+    {
+        return result;
     }
 
     try
     {
-        const installerRoot = materializeWslInstaller(localAppData);
+        const installerRoot = materializeWslInstaller(agentDataDirectory);
         const installerPath = windowsPathToWsl(path.join(installerRoot, "scripts", "install-hooks.js"));
         const output = execFileSync(
             "wsl.exe",

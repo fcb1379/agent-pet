@@ -32,17 +32,34 @@ function compareVersions(left, right)
     return 0;
 }
 
-function selectReleaseAssets(release)
+function releaseAssetNames(version, platform = process.platform, architecture = process.arch)
+{
+    if ("win32" === platform)
+    {
+        return { executableName: `AgentPet-${version}-portable.exe` };
+    }
+    if ("darwin" === platform && "arm64" === architecture)
+    {
+        return { executableName: `AgentPet-${version}-mac-arm64.dmg` };
+    }
+    if ("darwin" === platform)
+    {
+        throw new Error(`Agent Pet 暂不提供 macOS ${architecture} 更新包`);
+    }
+    throw new Error(`Agent Pet 暂不支持 ${platform} 自动更新`);
+}
+
+function selectReleaseAssets(release, platform = process.platform, architecture = process.arch)
 {
     const version = String(release.tag_name || "").replace(/^v/, "");
-    const executableName = `AgentPet-${version}-portable.exe`;
+    const { executableName } = releaseAssetNames(version, platform, architecture);
     const checksumName = `${executableName}.sha256`;
     const assets = Array.isArray(release.assets) ? release.assets : [];
     const executable = assets.find((asset) => executableName === asset.name);
     const checksum = assets.find((asset) => checksumName === asset.name);
     if (!executable || !checksum)
     {
-        throw new Error("最新 Release 缺少 Windows 便携版或 SHA256 校验文件");
+        throw new Error(`最新 Release 缺少 ${executableName} 或 SHA256 校验文件`);
     }
     return {
         version,
@@ -60,8 +77,7 @@ function selectReleaseAssets(release)
         }
     };
 }
-
-async function fetchLatestRelease(fetchImplementation, currentVersion)
+async function fetchLatestRelease(fetchImplementation, currentVersion, platform = process.platform, architecture = process.arch)
 {
     const response = await fetchImplementation(RELEASE_API_URL, {
         headers: {
@@ -75,7 +91,7 @@ async function fetchLatestRelease(fetchImplementation, currentVersion)
         throw new Error(`GitHub Release 查询失败（HTTP ${response.status}）`);
     }
     const release = await response.json();
-    const update = selectReleaseAssets(release);
+    const update = selectReleaseAssets(release, platform, architecture);
     return {
         ...update,
         updateAvailable: 0 < compareVersions(update.version, currentVersion)
@@ -164,6 +180,7 @@ module.exports = {
     downloadRelease,
     fetchLatestRelease,
     parseChecksum,
+    releaseAssetNames,
     RELEASE_API_URL,
     selectReleaseAssets,
     versionParts
