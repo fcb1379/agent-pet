@@ -1,0 +1,21 @@
+scripts/sync-gitee-release.js
+  s_8b864690008a55::t_28a55564e3c862 3,5,52-115,118-124,142,267-271,350
+tests/gitee-release-sync.test.js
+  s_8b864690008a55::t_5520b50f24f975 7,13-14,147,152-154,158-208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "960ebff3d6a9c1a2817d4cde0dda5051a1c8891d",
+  "prompts": {},
+  "sessions": {
+    "s_8b864690008a55": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb246-26fa-7bd3-9e95-60a639e74fdf",
+        "model": "unknown"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
