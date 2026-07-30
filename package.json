@@ -25,6 +25,11 @@
     "appId": "io.agentpet.desktop",
     "productName": "Agent Pet",
     "asar": true,
+    "electronLanguages": [
+      "en-US",
+      "zh-CN"
+    ],
+    "afterPack": "scripts/after-pack.js",
     "asarUnpack": [
       "**/node_modules/sharp/**/*",
       "**/node_modules/@img/**/*",
