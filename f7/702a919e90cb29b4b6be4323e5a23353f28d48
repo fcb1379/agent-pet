@@ -1,0 +1,31 @@
+package-lock.json
+  s_8ce5b921fe161e::t_6a495c27fa0764 3,9
+package.json
+  s_8ce5b921fe161e::t_4932e975d42d08 3
+.github/workflows/sync-gitee-release.yml
+  s_8b864690008a55::t_b6fa6c0ecfea8e 47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "f7702a919e90cb29b4b6be4323e5a23353f28d48",
+  "prompts": {},
+  "sessions": {
+    "s_8b864690008a55": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb246-26fa-7bd3-9e95-60a639e74fdf",
+        "model": "unknown"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_8ce5b921fe161e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fad45-8121-79a1-869d-cb94105ce197",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
