@@ -618,13 +618,18 @@ async function checkForUpdates()
     try
     {
         const fetchImplementation = (url, options) => net.fetch(url, options);
-        const update = await fetchLatestRelease(fetchImplementation, app.getVersion());
+        const update = await fetchLatestRelease(
+            fetchImplementation,
+            app.getVersion(),
+            settings.updateSource
+        );
         if (!update.updateAvailable)
         {
             await dialog.showMessageBox(mainWindow, {
                 type: "info",
                 title: "Agent Pet 更新",
                 message: `当前已经是最新版本 v${app.getVersion()}`,
+                detail: `更新源：${update.sourceLabel}`,
                 buttons: ["知道了"]
             });
             return;
@@ -900,6 +905,19 @@ function rebuildTrayMenu()
             label: updateChecking ? "正在检查更新…" : `检查更新…（当前 v${app.getVersion()}）`,
             enabled: !updateChecking,
             click: checkForUpdates
+        },
+        {
+            label: "更新源",
+            submenu: [
+                ["github", "GitHub"],
+                ["gitee", "Gitee（国内镜像）"]
+            ].map(([value, label]) => ({
+                label,
+                type: "radio",
+                checked: value === settings.updateSource,
+                enabled: !updateChecking,
+                click: () => updateSettings({ updateSource: value })
+            }))
         },
         {
             label: "开机启动",

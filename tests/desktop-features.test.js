@@ -43,6 +43,7 @@ test("settings accept only supported size and opacity presets", () => {
         clickThrough: true,
         displayMode: "pet",
         keyboardAnimation: true,
+        updateSource: "github",
         opacity: 0.75,
         scale: 1.25,
         position: null,
@@ -64,6 +65,8 @@ test("settings accept only supported size and opacity presets", () => {
         }
     });
     assert.equal(normalizeSettings({ scale: 9 }).scale, 1);
+    assert.equal(normalizeSettings({ updateSource: "gitee" }).updateSource, "gitee");
+    assert.equal(normalizeSettings({ updateSource: "unknown" }).updateSource, "github");
 });
 
 test("approval decisions are written only for existing safe requests", () => {

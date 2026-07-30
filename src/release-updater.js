@@ -6,7 +6,26 @@ const path = require("node:path");
 const { Readable, Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 
-const RELEASE_API_URL = "https://api.github.com/repos/fcb1379/agent-pet/releases/latest";
+const RELEASE_SOURCES = Object.freeze({
+    github: Object.freeze({
+        label: "GitHub",
+        apiUrl: "https://api.github.com/repos/fcb1379/agent-pet/releases/latest",
+        headers: Object.freeze({
+            Accept: "application/vnd.github+json",
+            "User-Agent": "agent-pet-updater",
+            "X-GitHub-Api-Version": "2022-11-28"
+        })
+    }),
+    gitee: Object.freeze({
+        label: "Gitee",
+        apiUrl: "https://gitee.com/api/v5/repos/reussss/agent-pet/releases/latest",
+        headers: Object.freeze({
+            Accept: "application/json",
+            "User-Agent": "agent-pet-updater"
+        })
+    })
+});
+const RELEASE_API_URL = RELEASE_SOURCES.github.apiUrl;
 
 function versionParts(value)
 {
@@ -77,23 +96,27 @@ function selectReleaseAssets(release, platform = process.platform, architecture 
         }
     };
 }
-async function fetchLatestRelease(fetchImplementation, currentVersion, platform = process.platform, architecture = process.arch)
+
+async function fetchLatestRelease(fetchImplementation, currentVersion, sourceName = "github", platform = process.platform, architecture = process.arch)
 {
-    const response = await fetchImplementation(RELEASE_API_URL, {
-        headers: {
-            Accept: "application/vnd.github+json",
-            "User-Agent": "agent-pet-updater",
-            "X-GitHub-Api-Version": "2022-11-28"
-        }
+    const source = RELEASE_SOURCES[sourceName] || RELEASE_SOURCES.github;
+    const response = await fetchImplementation(source.apiUrl, {
+        headers: source.headers
     });
     if (!response.ok)
     {
-        throw new Error(`GitHub Release 查询失败（HTTP ${response.status}）`);
+        if ("gitee" === sourceName && 404 === response.status)
+        {
+            throw new Error("Gitee 暂无可用 Release，请先在 Gitee 发布包含便携版和 SHA256 校验文件的版本");
+        }
+        throw new Error(`${source.label} Release 查询失败（HTTP ${response.status}）`);
     }
     const release = await response.json();
     const update = selectReleaseAssets(release, platform, architecture);
     return {
         ...update,
+        source: sourceName,
+        sourceLabel: source.label,
         updateAvailable: 0 < compareVersions(update.version, currentVersion)
     };
 }
@@ -180,8 +203,9 @@ module.exports = {
     downloadRelease,
     fetchLatestRelease,
     parseChecksum,
-    releaseAssetNames,
     RELEASE_API_URL,
+    releaseAssetNames,
+    RELEASE_SOURCES,
     selectReleaseAssets,
     versionParts
 };

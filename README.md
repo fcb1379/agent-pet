@@ -26,6 +26,7 @@ Agent Pet 是一个 Windows 与 macOS 桌面宠物，用动画和托盘状态显
 - 鼠标移入桌宠时随机播放内置动作或用户帧动画
 - 单击桌宠后在点击位置敲木鱼；点击越快反馈越强，每日次数保存在本机，停止点击后显示“今日功德”；拖动不会误触
 - CPU、GPU、内存、上下行网速资源条；支持总开关和单项开关
+- 更新源可在 GitHub 与 Gitee 国内镜像之间切换
 - 点击右下角会话数，查看每个会话的 Agent、来源、状态、最近进度、目录和更新时间；待审批会话可在卡片内直接允许或拒绝
 - 一键配置 Windows 和默认 WSL 中的 Codex / Claude Code hooks
 - 开机启动、显示/隐藏；已结束会话可逐个关闭或一键清理，运行中或待输入会话可经二次确认强制移除本地记录（不会终止 Agent）
@@ -149,6 +150,30 @@ npm run dist
 ```
 
 发布产物位于 `dist\AgentPet-<version>-portable.exe`。
+
+### Gitee 更新源
+
+右键托盘图标，在“更新源”中选择 GitHub 或 Gitee。选择 Gitee 后，程序会从
+`https://gitee.com/reussss/agent-pet` 的最新 Release 查询并下载更新。
+
+Gitee 仓库镜像只同步分支、标签和提交，不会自动同步 GitHub Release 附件。本项目通过
+`.github/workflows/sync-gitee-release.yml` 在 GitHub Release 发布后自动创建或更新同名
+Gitee Release，并上传以下两个产物：
+
+```text
+AgentPet-<version>-portable.exe
+AgentPet-<version>-portable.exe.sha256
+```
+
+首次使用前，需要完成以下配置：
+
+1. 在 Gitee 创建拥有 `reussss/agent-pet` 仓库写入权限的私人令牌。
+2. 打开 GitHub 仓库的 `Settings → Secrets and variables → Actions`。
+3. 新建名为 `GITEE_TOKEN` 的 Repository secret，并填入 Gitee 私人令牌。
+
+工作流由 GitHub 的 `release.published` 事件触发。它会先等待 Gitee 镜像同步对应标签，
+然后同步 Release 名称、说明和预发布状态；已存在的同名附件会跳过，因此失败后可以安全重跑。
+如果标签在约 10 分钟内仍未同步，工作流会失败并提示检查 Gitee 仓库镜像状态。
 
 ## 素材说明
 

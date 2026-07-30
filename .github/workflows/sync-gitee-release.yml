@@ -1,0 +1,98 @@
+name: Sync Release to Gitee
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: GitHub Release tag to synchronize
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-gitee-release-${{ github.event.release.tag_name || inputs.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  sync-release:
+    name: Sync release and assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Download GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${TAG_NAME#v}"
+          mkdir -p release-assets
+          gh release download "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "AgentPet-${version}-portable.exe" \
+            --pattern "AgentPet-${version}-portable.exe.sha256" \
+            --dir release-assets
+
+      - name: Fetch GitHub release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG_NAME}" > github-release.json
+
+      - name: Synchronize Git refs to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN || secrets.GITEE }}
+          GITEE_OWNER: reussss
+          GITEE_REPO: agent-pet
+          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          askpass="${RUNNER_TEMP}/gitee-askpass.sh"
+          cat > "$askpass" <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' "$GITEE_OWNER" ;;
+            *) printf '%s\n' "$GITEE_TOKEN" ;;
+          esac
+          EOF
+          chmod 700 "$askpass"
+          trap 'rm -f "$askpass"' EXIT
+          git fetch origin main --tags
+          GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 git \
+            -c credential.helper= \
+            push "https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git" \
+            "refs/remotes/origin/main:refs/heads/main" \
+            "refs/tags/${TAG_NAME}:refs/tags/${TAG_NAME}"
+
+      - name: Create Gitee release and upload assets
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN || secrets.GITEE }}
+          GITEE_OWNER: reussss
+          GITEE_REPO: agent-pet
+          RELEASE_ASSETS_DIR: release-assets
+          RELEASE_EVENT_PATH: github-release.json
+          GITEE_TAG_WAIT_ATTEMPTS: "20"
+          GITEE_TAG_WAIT_INTERVAL_MS: "30000"
+        run: node scripts/sync-gitee-release.js
