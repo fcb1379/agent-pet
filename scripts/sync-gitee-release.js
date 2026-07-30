@@ -59,7 +59,9 @@ function uploadFileWithHttps(options, requestImplementation = https.request)
         + "Content-Type: application/octet-stream\r\n\r\n"
     );
     const suffix = Buffer.from(`\r\n--${boundary}--\r\n`);
-    const contentLength = prefix.length + fs.statSync(options.filePath).size + suffix.length;
+    const fileSize = fs.statSync(options.filePath).size;
+    const contentLength = prefix.length + fileSize + suffix.length;
+    const progressStep = 10 * 1024 * 1024;
 
     return new Promise((resolve, reject) => {
         let settled = false;
@@ -107,8 +109,22 @@ function uploadFileWithHttps(options, requestImplementation = https.request)
         request.write(prefix);
 
         const fileStream = fs.createReadStream(options.filePath);
+        let uploadedBytes = 0;
+        let nextProgress = progressStep;
+        console.log(`开始上传 Gitee Release 附件：${fileName}（${fileSize} 字节）`);
         fileStream.on("error", (error) => request.destroy(error));
-        fileStream.on("end", () => request.end(suffix));
+        fileStream.on("data", (chunk) => {
+            uploadedBytes += chunk.length;
+            if (uploadedBytes >= nextProgress)
+            {
+                console.log(`Gitee 附件上传进度：${fileName} ${uploadedBytes}/${fileSize} 字节`);
+                nextProgress += progressStep;
+            }
+        });
+        fileStream.on("end", () => {
+            console.log(`Gitee 附件数据发送完成：${fileName} ${uploadedBytes}/${fileSize} 字节`);
+            request.end(suffix);
+        });
         fileStream.pipe(request, { end: false });
     });
 }
