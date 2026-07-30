@@ -1,0 +1,19 @@
+.github/workflows/build-macos-arm64.yml
+  s_0332d36caebde3::t_64ec3fd08c42b8 40-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "f8c59de63ee7c66afb5e4614222fa28cf16f170c",
+  "prompts": {},
+  "sessions": {
+    "s_0332d36caebde3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76440a4-9d67-46d7-a43f-3ed64cc590ab",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}

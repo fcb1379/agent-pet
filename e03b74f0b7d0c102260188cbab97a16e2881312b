@@ -1,0 +1,21 @@
+package-lock.json
+  s_ae7e491749ac33::t_dea45ce1466a3e 3,9
+package.json
+  s_ae7e491749ac33::t_91677f7bee0d79 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "e03b74f0b7d0c102260188cbab97a16e2881312b",
+  "prompts": {},
+  "sessions": {
+    "s_ae7e491749ac33": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "071fb012-ce72-4840-9bae-709ff840808b",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}

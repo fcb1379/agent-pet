@@ -1,0 +1,19 @@
+package.json
+  s_0332d36caebde3::t_8ae27c36b04743 20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "23dc5051bec3eec151e44084bfef97ad96488406",
+  "prompts": {},
+  "sessions": {
+    "s_0332d36caebde3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76440a4-9d67-46d7-a43f-3ed64cc590ab",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+src/foreground-extractor.js
+  s_1c71804c5456fa::t_19cccbe0313ce6 1-176
+  s_1c71804c5456fa::t_796ec11db294e3 177-179
+  s_1c71804c5456fa::t_8d2710f8b33cd8 180-249
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "46bc5d5d8934b60c5bb359278498c752bb4c8af9",
+  "prompts": {},
+  "sessions": {
+    "s_1c71804c5456fa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fabe0-c518-7651-90af-22c2f425b6a8",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
