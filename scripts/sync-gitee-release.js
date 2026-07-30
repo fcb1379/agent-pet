@@ -53,8 +53,20 @@ function uploadFileWithHttps(options, requestImplementation = https.request)
 {
     const fileName = path.basename(options.filePath).replace(/["\r\n]/g, "_");
     const boundary = `----agent-pet-${crypto.randomUUID()}`;
-    const prefix = Buffer.from(
+    const fields = {
+        access_token: options.token,
+        owner: options.owner,
+        repo: options.repository,
+        release_id: String(options.releaseId)
+    };
+    const metadata = Object.entries(fields).map(([name, value]) => (
         `--${boundary}\r\n`
+        + `Content-Disposition: form-data; name="${name}"\r\n\r\n`
+        + `${String(value).replace(/[\r\n]/g, "")}\r\n`
+    )).join("");
+    const prefix = Buffer.from(
+        metadata
+        + `--${boundary}\r\n`
         + `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n`
         + "Content-Type: application/octet-stream\r\n\r\n"
     );
@@ -283,6 +295,9 @@ class GiteeClient
             await this.uploadImplementation({
                 token: this.token,
                 url: `${GITEE_API_BASE}${assetsPath}`,
+                owner: this.owner,
+                repository: this.repository,
+                releaseId,
                 filePath
             });
             console.log(`已上传 Gitee Release 附件：${fileName}`);

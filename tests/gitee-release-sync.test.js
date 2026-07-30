@@ -157,6 +157,9 @@ test("Gitee release sync skips existing assets and uploads missing assets", asyn
         assert.equal(uploads.length, 1);
         assert.equal(uploads[0].token, "token");
         assert.equal(uploads[0].filePath, checksum);
+        assert.equal(uploads[0].owner, "reussss");
+        assert.equal(uploads[0].repository, "agent-pet");
+        assert.equal(uploads[0].releaseId, 123);
         assert.match(uploads[0].url, /\/releases\/123\/attach_files$/);
         assert.equal(requests.length, 1);
     }
@@ -177,6 +180,9 @@ test("Gitee release sync streams multipart uploads without fetch", async () => {
         await uploadFileWithHttps({
             token: "token",
             url: "https://gitee.com/api/v5/repos/reussss/agent-pet/releases/123/attach_files",
+            owner: "reussss",
+            repository: "agent-pet",
+            releaseId: 123,
             filePath
         }, (url, options, callback) => {
             assert.match(url, /^https:\/\/gitee\.com\/api\/v5\//);
@@ -205,6 +211,10 @@ test("Gitee release sync streams multipart uploads without fetch", async () => {
             /^multipart\/form-data; boundary=/
         );
         assert.match(body.toString(), /filename="AgentPet-0\.6\.0-portable\.exe"/);
+        assert.match(body.toString(), /name="access_token"\r\n\r\ntoken\r\n/);
+        assert.match(body.toString(), /name="owner"\r\n\r\nreussss\r\n/);
+        assert.match(body.toString(), /name="repo"\r\n\r\nagent-pet\r\n/);
+        assert.match(body.toString(), /name="release_id"\r\n\r\n123\r\n/);
         assert.match(body.toString(), /portable executable/);
     }
     finally
