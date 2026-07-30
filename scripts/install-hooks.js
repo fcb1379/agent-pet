@@ -35,6 +35,10 @@ function resolveNodeExecutable(execFileSync = childProcess.execFileSync)
     {
         return bundledExecutable;
     }
+    if ("darwin" === process.platform && process.versions.electron)
+    {
+        return process.execPath;
+    }
     if (/^node(?:\.exe)?$/i.test(path.basename(process.execPath)))
     {
         return process.execPath;
@@ -54,20 +58,40 @@ function resolveNodeExecutable(execFileSync = childProcess.execFileSync)
     return executable.trim();
 }
 
-function installNodeRuntime(installDirectory, sourceExecutable)
+function shellSingleQuote(value)
 {
-    if ("win32" !== process.platform)
+    return `'${String(value).replaceAll("'", "'\"'\"'")}'`;
+}
+
+function installNodeRuntime(installDirectory, sourceExecutable, platform = process.platform)
+{
+    if (!["win32", "darwin"].includes(platform))
     {
         return sourceExecutable;
     }
 
     const runtimeDirectory = path.join(installDirectory, "runtime");
-    const installedExecutable = path.join(runtimeDirectory, "node.exe");
     fs.mkdirSync(runtimeDirectory, { recursive: true });
-    if (path.resolve(sourceExecutable) !== path.resolve(installedExecutable))
+    if ("win32" === platform)
     {
-        fs.copyFileSync(sourceExecutable, installedExecutable);
+        const installedExecutable = path.join(runtimeDirectory, "node.exe");
+        if (path.resolve(sourceExecutable) !== path.resolve(installedExecutable))
+        {
+            fs.copyFileSync(sourceExecutable, installedExecutable);
+        }
+        return installedExecutable;
     }
+
+    const installedExecutable = path.join(runtimeDirectory, "node");
+    const runAsNode = /^node$/i.test(path.basename(sourceExecutable))
+        ? ""
+        : "ELECTRON_RUN_AS_NODE=1 ";
+    fs.writeFileSync(
+        installedExecutable,
+        `#!/bin/sh\n${runAsNode}exec ${shellSingleQuote(sourceExecutable)} "$@"\n`,
+        { encoding: "utf8", mode: 0o755 }
+    );
+    fs.chmodSync(installedExecutable, 0o755);
     return installedExecutable;
 }
 function installHooks(options = {})
@@ -77,9 +101,12 @@ function installHooks(options = {})
     fs.mkdirSync(paths.installDirectory, { recursive: true });
     const nodeExecutable = installNodeRuntime(paths.installDirectory, sourceNodeExecutable);
     const sourceBridge = path.resolve(__dirname, "..", "bridge", "agent-pet-bridge.js");
+    const sourcePlatformPaths = path.resolve(__dirname, "..", "bridge", "platform-paths.js");
     const installedBridge = path.join(paths.installDirectory, "agent-pet-bridge.js");
+    const installedPlatformPaths = path.join(paths.installDirectory, "platform-paths.js");
 
     fs.copyFileSync(sourceBridge, installedBridge);
+    fs.copyFileSync(sourcePlatformPaths, installedPlatformPaths);
 
     const codexConfig = addManagedHandlers(
         readJson(paths.codexHooks, { hooks: {} }),
@@ -99,7 +126,7 @@ function installHooks(options = {})
     writeJsonWithBackup(paths.codexHooks, codexConfig);
     writeJsonWithBackup(paths.claudeSettings, claudeConfig);
 
-    return { ...paths, installedBridge, nodeExecutable };
+    return { ...paths, installedBridge, installedPlatformPaths, nodeExecutable };
 }
 
 function verifyInstalledBridge(paths, options = {})
@@ -164,7 +191,7 @@ function main()
         verification ? `  Self-test: OK (${verification.stateDirectory})` : "",
         "",
         "Restart both CLIs. In Codex, run /hooks once and trust the Agent Pet hooks.",
-        "Run this installer separately in Windows and in each WSL distribution you use.",
+        "On Windows, run this installer separately in each WSL distribution you use.",
         ""
     ].join("\n"));
 }
@@ -187,5 +214,6 @@ module.exports = {
     installNodeRuntime,
     installHooks,
     resolveNodeExecutable,
+    shellSingleQuote,
     verifyInstalledBridge
 };

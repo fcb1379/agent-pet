@@ -17,12 +17,14 @@ const {
     Tray,
     screen
 } = require("electron");
+const { agentDataDirectory: platformAgentDataDirectory, approvalDirectory: platformApprovalDirectory, platformLabel, stateDirectory: platformStateDirectory } = require("../bridge/platform-paths");
 const { installLocalAi } = require("./ai-setup");
 const { ApprovalStore } = require("./approval-store");
 const { KeyboardActivityMonitor } = require("./keyboard-activity");
 const { importImageFiles } = require("./custom-assets");
 const { extractForegroundBitmap } = require("./foreground-extractor");
 const { importStickerAnimation } = require("./sticker-importer");
+const { shouldIgnoreMouse } = require("./interaction-policy");
 const { downloadRelease, fetchLatestRelease } = require("./release-updater");
 const { ResourceMonitor } = require("./resource-monitor");
 const { SettingsStore } = require("./settings-store");
@@ -50,26 +52,26 @@ let positionAdjusting = false;
 let positionAdjustTimer = null;
 let moveSaveTimer = null;
 let suppressMoveSaveUntil = 0;
+let rendererHitActive = false;
 
 const BASE_SIZES = Object.freeze({
     pet: { width: 300, height: 350 },
     traffic: { width: 104, height: 236 }
 });
 
-function localAppDataDirectory()
+function agentDataDirectory()
 {
-    return process.env.LOCALAPPDATA
-        || path.join(path.dirname(app.getPath("appData")), "Local");
+    return platformAgentDataDirectory();
 }
 
 function stateDirectory()
 {
-    return path.join(localAppDataDirectory(), "AgentPet", "states");
+    return platformStateDirectory();
 }
 
 function approvalDirectory()
 {
-    return path.join(localAppDataDirectory(), "AgentPet", "approvals");
+    return platformApprovalDirectory();
 }
 
 function customAssetDirectory()
@@ -115,12 +117,19 @@ function extractMascotImage(filePath)
 
 function publicWindowSettings()
 {
+    const windowsMetrics = "win32" === process.platform;
     return {
         ...settings,
+        keyboardAnimation: windowsMetrics && settings.keyboardAnimation,
         animation: {
             ...settings.animation,
             mascotUrl: imageFileUrl(settings.animation.mascotPath),
             hoverFrameUrls: settings.animation.hoverFrames.map(imageFileUrl).filter(Boolean)
+        },
+        resources: {
+            ...settings.resources,
+            gpu: windowsMetrics && settings.resources.gpu,
+            network: windowsMetrics && settings.resources.network
         }
     };
 }
@@ -129,6 +138,19 @@ function loginExecutable()
     return process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
 }
 
+function loginItemOptions(openAtLogin)
+{
+    const options = {};
+    if ("boolean" === typeof openAtLogin)
+    {
+        options.openAtLogin = openAtLogin;
+    }
+    if ("win32" === process.platform)
+    {
+        options.path = loginExecutable();
+    }
+    return options;
+}
 function createTrayImage(state)
 {
     return nativeImage.createFromBitmap(createTrayBitmap(state), {
@@ -233,8 +255,14 @@ function applyInteractionMode()
         return;
     }
 
-    const shouldIgnoreMouse = settings.clickThrough && !latestApproval && !positionAdjusting && !sessionDetailsOpen;
-    mainWindow.setIgnoreMouseEvents(shouldIgnoreMouse, { forward: true });
+    const ignoreMouse = shouldIgnoreMouse({
+        clickThrough: settings.clickThrough,
+        hasApproval: Boolean(latestApproval),
+        positionAdjusting,
+        sessionDetailsOpen,
+        rendererHitActive
+    });
+    mainWindow.setIgnoreMouseEvents(ignoreMouse, { forward: true });
 }
 
 function applyWindowSettings()
@@ -433,9 +461,14 @@ async function dismissSession(sessionId, force = false)
 
 function formatSetupResult(result)
 {
-    const windows = result.windows.ok ? "✓ Windows 已配置并自检通过" : `✗ Windows：${result.windows.message}`;
-    const wsl = result.wsl.ok ? "✓ 默认 WSL 已配置并自检通过" : `△ 默认 WSL：${result.wsl.message}`;
-    return `${windows}\n${wsl}\n\n配置只对重启后的新会话生效。请完全关闭并重新打开 Codex / Claude Code；Codex 中输入 /hooks，并信任新增的 Agent Pet SessionStart hook。`;
+    const label = platformLabel(result.platform);
+    const local = result.local.ok
+        ? `✓ ${label} 已配置并自检通过`
+        : `✗ ${label}：${result.local.message}`;
+    const wsl = result.wsl
+        ? (result.wsl.ok ? "✓ 默认 WSL 已配置并自检通过" : `△ 默认 WSL：${result.wsl.message}`)
+        : null;
+    return `${[local, wsl].filter(Boolean).join("\n")}\n\n配置只对重启后的新会话生效。请完全关闭并重新打开 Codex / Claude Code；Codex 中输入 /hooks，并信任新增的 Agent Pet SessionStart hook。`;
 }
 
 function runOneClickSetup()
@@ -448,11 +481,11 @@ function runOneClickSetup()
     setupRunning = true;
     rebuildTrayMenu();
     setImmediate(() => {
-        const result = installLocalAi(localAppDataDirectory());
+        const result = installLocalAi(agentDataDirectory());
         setupRunning = false;
         rebuildTrayMenu();
         dialog.showMessageBox(mainWindow, {
-            type: result.windows.ok ? "info" : "error",
+            type: result.local.ok ? "info" : "error",
             title: "Agent Pet 一键配置",
             message: "本机 AI 配置完成",
             detail: formatSetupResult(result),
@@ -633,7 +666,9 @@ async function checkForUpdates()
             title: "Agent Pet 更新下载完成",
             message: `${update.releaseName} 已下载并通过 SHA256 校验`,
             detail: downloaded.destinationPath,
-            buttons: ["退出并启动新版本", "打开下载位置", "稍后"],
+            buttons: "darwin" === process.platform
+                ? ["打开安装镜像", "打开下载位置", "稍后"]
+                : ["退出并启动新版本", "打开下载位置", "稍后"],
             defaultId: 0,
             cancelId: 2
         });
@@ -664,7 +699,7 @@ function rebuildTrayMenu()
         return;
     }
 
-    const autoStart = app.getLoginItemSettings({ path: loginExecutable() }).openAtLogin;
+    const autoStart = app.getLoginItemSettings(loginItemOptions()).openAtLogin;
     const scaleItems = [[0.75, "75%"], [1, "100%"], [1.25, "125%"], [1.5, "150%"]];
     const opacityItems = [[0.5, "50%"], [0.75, "75%"], [0.9, "90%"], [1, "100%"]];
 
@@ -810,7 +845,8 @@ function rebuildTrayMenu()
                 {
                     label: "GPU",
                     type: "checkbox",
-                    checked: settings.resources.gpu,
+                    checked: "win32" === process.platform && settings.resources.gpu,
+                    enabled: "win32" === process.platform,
                     click: (item) => updateSettings({ resources: { gpu: item.checked } })
                 },
                 {
@@ -822,7 +858,8 @@ function rebuildTrayMenu()
                 {
                     label: "网速（下行 / 上行）",
                     type: "checkbox",
-                    checked: settings.resources.network,
+                    checked: "win32" === process.platform && settings.resources.network,
+                    enabled: "win32" === process.platform,
                     click: (item) => updateSettings({ resources: { network: item.checked } })
                 }
             ]
@@ -830,7 +867,8 @@ function rebuildTrayMenu()
         {
             label: "键盘打字动画（不记录按键）",
             type: "checkbox",
-            checked: settings.keyboardAnimation,
+            checked: "win32" === process.platform && settings.keyboardAnimation,
+            enabled: "win32" === process.platform,
             click: (item) => updateSettings({ keyboardAnimation: item.checked })
         },
         { type: "separator" },
@@ -851,7 +889,7 @@ function rebuildTrayMenu()
         },
         { type: "separator" },
         {
-            label: setupRunning ? "正在配置本机 AI…" : "一键配置本机 AI（Windows + 默认 WSL）",
+            label: setupRunning ? "正在配置本机 AI…" : ("darwin" === process.platform ? "一键配置本机 AI（macOS）" : "一键配置本机 AI（Windows + 默认 WSL）"),
             enabled: !setupRunning,
             click: runOneClickSetup
         },
@@ -885,10 +923,7 @@ function rebuildTrayMenu()
             label: "开机启动",
             type: "checkbox",
             checked: autoStart,
-            click: (item) => app.setLoginItemSettings({
-                openAtLogin: item.checked,
-                path: loginExecutable()
-            })
+            click: (item) => app.setLoginItemSettings(loginItemOptions(item.checked))
         },
         { type: "separator" },
         {
@@ -1007,6 +1042,10 @@ else
     });
 
     app.whenReady().then(() => {
+        if ("darwin" === process.platform && app.dock)
+        {
+            app.dock.hide();
+        }
         fs.mkdirSync(stateDirectory(), { recursive: true });
         fs.mkdirSync(approvalDirectory(), { recursive: true });
         settingsStore = new SettingsStore(path.join(app.getPath("userData"), "settings.json"));
@@ -1033,6 +1072,15 @@ else
         registerGlobalShortcuts();
 
         ipcMain.on("set-display-mode", (_event, mode) => applyDisplayMode(mode));
+        ipcMain.on("pointer-hit-state", (_event, active) => {
+            const nextHitActive = true === active;
+            if (rendererHitActive === nextHitActive)
+            {
+                return;
+            }
+            rendererHitActive = nextHitActive;
+            applyInteractionMode();
+        });
         ipcMain.on("hide-window", () => {
             mainWindow.hide();
             rebuildTrayMenu();

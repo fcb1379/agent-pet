@@ -102,7 +102,10 @@ test("release updater compares versions and selects a newer portable release", a
                 headers: { "content-type": "application/json" }
             });
         },
-        "0.5.0"
+        "0.5.0",
+        "github",
+        "win32",
+        "x64"
     );
     assert.equal(requestedUrl, RELEASE_SOURCES.github.apiUrl);
     assert.equal(update.updateAvailable, true);
@@ -133,7 +136,9 @@ test("release updater can use the Gitee release source", async () => {
             return new Response(JSON.stringify(release));
         },
         "0.5.2",
-        "gitee"
+        "gitee",
+        "win32",
+        "x64"
     );
     assert.equal(requestedUrl, RELEASE_SOURCES.gitee.apiUrl);
     assert.equal(update.source, "gitee");
@@ -147,7 +152,9 @@ test("release updater explains when the Gitee mirror has no release", async () =
         fetchLatestRelease(
             async () => new Response("{\"message\":\"404 Not Found\"}", { status: 404 }),
             "0.5.2",
-            "gitee"
+            "gitee",
+            "win32",
+            "x64"
         ),
         /Gitee 暂无可用 Release/
     );

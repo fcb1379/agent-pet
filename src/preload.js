@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("agentPet", {
     dismissSession: (sessionId, force = false) => ipcRenderer.invoke("dismiss-session", { sessionId, force }),
     clearFinishedSessions: () => ipcRenderer.send("clear-finished-sessions"),
     setSessionDetailsOpen: (open) => ipcRenderer.send("session-details-state", open),
+    setPointerHitState: (active) => ipcRenderer.send("pointer-hit-state", true === active),
     dragWindow: (dx, dy) => ipcRenderer.send("window-drag", dx, dy),
     hide: () => ipcRenderer.send("hide-window")
 });

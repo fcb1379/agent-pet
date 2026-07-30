@@ -60,7 +60,7 @@ body.state-error {
     display: flex;
     flex-direction: column;
     align-items: center;
-    -webkit-app-region: drag;
+    -webkit-app-region: no-drag;
 }
 
 #speech-bubble {

@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const childProcess = require("node:child_process");
+const { platformLabel, stateDirectory: defaultStateDirectory } = require("./platform-paths");
 
 function readStdin()
 {
@@ -67,7 +68,7 @@ function resolveStateDirectory()
         }
     }
 
-    return path.join(os.homedir(), ".local", "share", "AgentPet", "states");
+    return defaultStateDirectory();
 }
 
 function approvalDirectoryForStateDirectory(stateDirectory)
@@ -309,7 +310,7 @@ async function main()
         protocolVersion: 1,
         id,
         provider: "claude" === provider ? "Claude Code" : "Codex",
-        source: "win32" === process.platform ? "Windows" : (process.env.WSL_DISTRO_NAME ? `WSL · ${process.env.WSL_DISTRO_NAME}` : "Linux"),
+        source: process.env.WSL_DISTRO_NAME ? `WSL · ${process.env.WSL_DISTRO_NAME}` : platformLabel(),
         state,
         event: eventName,
         message: messageFor(state, payload),

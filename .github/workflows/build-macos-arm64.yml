@@ -1,0 +1,66 @@
+name: Build macOS arm64
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/macos-arm64
+    paths:
+      - ".github/workflows/build-macos-arm64.yml"
+      - "assets/**"
+      - "bridge/**"
+      - "scripts/**"
+      - "src/**"
+      - "tests/**"
+      - "package.json"
+      - "package-lock.json"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - run: npm test
+
+      - run: npm run dist:mac
+
+      - name: Smoke test packaged hook installer
+        env:
+          AGENT_PET_STATE_DIR: ${{ runner.temp }}/agent-pet-states
+        run: |
+          export HOME="${RUNNER_TEMP}/agent-pet-home"
+          mkdir -p "$HOME" "$AGENT_PET_STATE_DIR"
+          app_executable="dist/mac-arm64/Agent Pet.app/Contents/MacOS/Agent Pet"
+          installer="dist/mac-arm64/Agent Pet.app/Contents/Resources/app.asar/scripts/install-hooks.js"
+          output_file="${RUNNER_TEMP}/agent-pet-hook-self-test.txt"
+          printf '{}' | env ELECTRON_RUN_AS_NODE=1 "$app_executable" "$installer" --self-test | tee "$output_file"
+          test -x "$HOME/.agent-pet/runtime/node"
+          test -f "$HOME/.agent-pet/agent-pet-bridge.js"
+          test -f "$HOME/.agent-pet/platform-paths.js"
+          grep -q 'Self-test: OK' "$output_file"
+          grep -q 'SessionStart' "$HOME/.codex/hooks.json"
+          grep -q 'SessionStart' "$HOME/.claude/settings.json"
+
+      - name: Create checksum
+        run: for file in dist/AgentPet-*-mac-arm64.dmg; do shasum -a 256 "$file" > "$file.sha256"; done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgentPet-macOS-arm64
+          path: |
+            dist/AgentPet-*-mac-arm64.dmg
+            dist/*.sha256
+          if-no-files-found: error
