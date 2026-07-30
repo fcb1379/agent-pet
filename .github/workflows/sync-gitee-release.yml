@@ -44,7 +44,7 @@ jobs:
 
       - name: Create Gitee release and upload assets
         env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN || secrets.GITEE }}
           GITEE_OWNER: reussss
           GITEE_REPO: agent-pet
           RELEASE_ASSETS_DIR: release-assets
