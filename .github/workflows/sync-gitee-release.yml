@@ -1,0 +1,54 @@
+name: Sync Release to Gitee
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-gitee-release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  sync-release:
+    name: Sync release and assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Download GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${TAG_NAME#v}"
+          mkdir -p release-assets
+          gh release download "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "AgentPet-${version}-portable.exe" \
+            --pattern "AgentPet-${version}-portable.exe.sha256" \
+            --dir release-assets
+
+      - name: Create Gitee release and upload assets
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_OWNER: reussss
+          GITEE_REPO: agent-pet
+          RELEASE_ASSETS_DIR: release-assets
+          RELEASE_EVENT_PATH: ${{ github.event_path }}
+          GITEE_TAG_WAIT_ATTEMPTS: "20"
+          GITEE_TAG_WAIT_INTERVAL_MS: "30000"
+        run: node scripts/sync-gitee-release.js

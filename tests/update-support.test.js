@@ -15,7 +15,8 @@ const {
     compareVersions,
     downloadRelease,
     fetchLatestRelease,
-    parseChecksum
+    parseChecksum,
+    RELEASE_SOURCES
 } = require("../src/release-updater");
 
 test("dependency bootstrap detects a changed package lock and stamps installed state", () => {
@@ -92,15 +93,64 @@ test("release updater compares versions and selects a newer portable release", a
             }
         ]
     };
+    let requestedUrl = "";
     const update = await fetchLatestRelease(
-        async () => new Response(JSON.stringify(release), {
-            status: 200,
-            headers: { "content-type": "application/json" }
-        }),
+        async (url) => {
+            requestedUrl = url;
+            return new Response(JSON.stringify(release), {
+                status: 200,
+                headers: { "content-type": "application/json" }
+            });
+        },
         "0.5.0"
     );
+    assert.equal(requestedUrl, RELEASE_SOURCES.github.apiUrl);
     assert.equal(update.updateAvailable, true);
+    assert.equal(update.source, "github");
     assert.equal(update.executable.name, "AgentPet-0.6.0-portable.exe");
+});
+
+test("release updater can use the Gitee release source", async () => {
+    const release = {
+        tag_name: "v0.6.0",
+        name: "Agent Pet v0.6.0",
+        html_url: "https://gitee.com/reussss/agent-pet/releases/tag/v0.6.0",
+        assets: [
+            {
+                name: "AgentPet-0.6.0-portable.exe",
+                browser_download_url: "https://gitee.com/reussss/agent-pet/releases/download/v0.6.0/AgentPet-0.6.0-portable.exe"
+            },
+            {
+                name: "AgentPet-0.6.0-portable.exe.sha256",
+                browser_download_url: "https://gitee.com/reussss/agent-pet/releases/download/v0.6.0/AgentPet-0.6.0-portable.exe.sha256"
+            }
+        ]
+    };
+    let requestedUrl = "";
+    const update = await fetchLatestRelease(
+        async (url) => {
+            requestedUrl = url;
+            return new Response(JSON.stringify(release));
+        },
+        "0.5.2",
+        "gitee"
+    );
+    assert.equal(requestedUrl, RELEASE_SOURCES.gitee.apiUrl);
+    assert.equal(update.source, "gitee");
+    assert.equal(update.sourceLabel, "Gitee");
+    assert.equal(update.updateAvailable, true);
+    assert.match(update.executable.url, /^https:\/\/gitee\.com\//);
+});
+
+test("release updater explains when the Gitee mirror has no release", async () => {
+    await assert.rejects(
+        fetchLatestRelease(
+            async () => new Response("{\"message\":\"404 Not Found\"}", { status: 404 }),
+            "0.5.2",
+            "gitee"
+        ),
+        /Gitee 暂无可用 Release/
+    );
 });
 
 test("release updater downloads and verifies the portable executable", async () => {
