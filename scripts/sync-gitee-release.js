@@ -156,7 +156,11 @@ class GiteeClient
         });
         const headers = { "Content-Type": "application/json" };
 
-        if (404 === lookup.response.status)
+        if (
+            404 === lookup.response.status
+            || !lookup.data
+            || !Number.isInteger(Number(lookup.data.id))
+        )
         {
             const created = await this.request("POST", this.repositoryPath("/releases"), {
                 headers,

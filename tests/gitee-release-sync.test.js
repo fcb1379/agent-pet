@@ -115,6 +115,26 @@ test("Gitee release sync creates a missing release", async () => {
     assert.equal(requests[1].options.headers.Authorization, "Bearer token");
 });
 
+test("Gitee release sync treats a null tag lookup as a missing release", async () => {
+    const requests = [];
+    const client = new GiteeClient("token", "reussss", "agent-pet", async (url, options) => {
+        requests.push({ url, options });
+        return "GET" === options.method
+            ? jsonResponse(null)
+            : jsonResponse({ id: 456, tag_name: "v0.6.0" }, 201);
+    });
+    const release = await client.synchronizeRelease({
+        tagName: "v0.6.0",
+        targetCommitish: "main",
+        name: "Agent Pet v0.6.0",
+        body: "changes",
+        prerelease: false
+    });
+    assert.equal(release.id, 456);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1].options.method, "POST");
+});
+
 test("Gitee release sync skips existing assets and uploads missing assets", async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pet-gitee-upload-"));
     const executable = path.join(directory, "AgentPet-0.6.0-portable.exe");
