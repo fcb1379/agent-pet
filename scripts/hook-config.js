@@ -5,8 +5,8 @@ const os = require("node:os");
 const path = require("node:path");
 
 const MANAGED_MARKER = "agent-pet-bridge.js";
-const CODEX_EVENTS = ["UserPromptSubmit", "PermissionRequest", "Stop", "SessionEnd"];
-const CLAUDE_EVENTS = ["UserPromptSubmit", "PermissionRequest", "Notification", "Stop", "StopFailure", "SessionEnd"];
+const CODEX_EVENTS = ["SessionStart", "UserPromptSubmit", "PermissionRequest", "Stop", "SessionEnd"];
+const CLAUDE_EVENTS = ["SessionStart", "UserPromptSubmit", "PermissionRequest", "Notification", "Stop", "StopFailure", "SessionEnd"];
 
 function readJson(filePath, fallback)
 {
@@ -29,9 +29,9 @@ function writeJsonWithBackup(filePath, value)
     fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-function commandFor(bridgePath, provider, eventName)
+function commandFor(bridgePath, provider, eventName, nodeExecutable = "node")
 {
-    return `node "${bridgePath}" ${provider} ${eventName}`;
+    return `"${nodeExecutable}" "${bridgePath}" ${provider} ${eventName}`;
 }
 
 function removeManagedHandlers(config, events)
@@ -59,7 +59,7 @@ function removeManagedHandlers(config, events)
     return config;
 }
 
-function addManagedHandlers(config, events, provider, bridgePath)
+function addManagedHandlers(config, events, provider, bridgePath, nodeExecutable)
 {
     removeManagedHandlers(config, events);
     config.hooks = config.hooks || {};
@@ -74,7 +74,7 @@ function addManagedHandlers(config, events, provider, bridgePath)
             matcher: "",
             hooks: [{
                 type: "command",
-                command: commandFor(bridgePath, provider, eventName),
+                command: commandFor(bridgePath, provider, eventName, nodeExecutable),
                 timeout
             }]
         });
@@ -98,6 +98,7 @@ module.exports = {
     CODEX_EVENTS,
     MANAGED_MARKER,
     addManagedHandlers,
+    commandFor,
     configurationPaths,
     readJson,
     removeManagedHandlers,

@@ -1,6 +1,6 @@
 {
   "name": "agent-pet",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "A Windows desktop pet that reflects Codex and Claude Code activity from Windows and WSL.",
   "main": "src/main.js",
   "type": "commonjs",
@@ -27,7 +27,8 @@
     "asar": true,
     "asarUnpack": [
       "**/node_modules/sharp/**/*",
-      "**/node_modules/@img/**/*"
+      "**/node_modules/@img/**/*",
+      "**/node_modules/node-win-x64/**/*"
     ],
     "files": [
       "src/**/*",
@@ -45,6 +46,7 @@
     }
   },
   "dependencies": {
+    "node-win-x64": "24.14.0",
     "sharp": "^0.34.5",
     "upng-js": "^2.1.0"
   }

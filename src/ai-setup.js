@@ -3,7 +3,7 @@
 const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
-const { installHooks } = require("../scripts/install-hooks");
+const { installHooks, verifyInstalledBridge } = require("../scripts/install-hooks");
 
 function windowsPathToWsl(windowsPath)
 {
@@ -38,10 +38,11 @@ function installLocalAi(localAppData, execFileSync = childProcess.execFileSync)
 
     try
     {
-        const paths = installHooks();
+        const paths = installHooks({ execFileSync });
+        const verification = verifyInstalledBridge(paths, { execFileSync });
         result.windows = {
             ok: true,
-            message: `Codex: ${paths.codexHooks}\nClaude: ${paths.claudeSettings}`
+            message: `Codex: ${paths.codexHooks}\nClaude: ${paths.claudeSettings}\nSelf-test: ${verification.stateDirectory}`
         };
     }
     catch (error)
@@ -55,7 +56,7 @@ function installLocalAi(localAppData, execFileSync = childProcess.execFileSync)
         const installerPath = windowsPathToWsl(path.join(installerRoot, "scripts", "install-hooks.js"));
         const output = execFileSync(
             "wsl.exe",
-            ["--", "node", installerPath],
+            ["--", "node", installerPath, "--self-test"],
             { encoding: "utf8", windowsHide: true, timeout: 60000 }
         );
         result.wsl = { ok: true, message: output.trim() };

@@ -433,9 +433,9 @@ async function dismissSession(sessionId, force = false)
 
 function formatSetupResult(result)
 {
-    const windows = result.windows.ok ? "✓ Windows 已配置" : `✗ Windows：${result.windows.message}`;
-    const wsl = result.wsl.ok ? "✓ 默认 WSL 已配置" : `△ 默认 WSL：${result.wsl.message}`;
-    return `${windows}\n${wsl}\n\n请重启 Codex 和 Claude Code。Codex 中输入 /hooks，并重新信任 Agent Pet hooks。`;
+    const windows = result.windows.ok ? "✓ Windows 已配置并自检通过" : `✗ Windows：${result.windows.message}`;
+    const wsl = result.wsl.ok ? "✓ 默认 WSL 已配置并自检通过" : `△ 默认 WSL：${result.wsl.message}`;
+    return `${windows}\n${wsl}\n\n配置只对重启后的新会话生效。请完全关闭并重新打开 Codex / Claude Code；Codex 中输入 /hooks，并信任新增的 Agent Pet SessionStart hook。`;
 }
 
 function runOneClickSetup()

@@ -73,7 +73,9 @@ npm start
 2. 在 Codex 中输入 `/hooks`。
 3. 审阅并信任 Agent Pet hooks。
 
-安装器会合并已有配置并首次创建 `.agent-pet.bak` 备份，不会替换无关 hooks。若使用多个 WSL 发行版，需要在其余发行版中按下面的手动方式分别安装。
+安装器会合并已有配置并首次创建 `.agent-pet.bak` 备份，不会替换无关 hooks。Windows 便携版内置 hook 专用 Node 运行时，无需用户另外安装 Node.js；默认 WSL 仍需安装 Node.js。配置完成后会分别执行 Codex 和 Claude bridge 自检，失败时会直接报告原因，不再显示“已配置”。
+
+配置只对重新启动后的新会话生效。若使用多个 WSL 发行版，需要在其余发行版中按下面的手动方式分别安装。
 
 ## 手动安装 Agent hooks
 
