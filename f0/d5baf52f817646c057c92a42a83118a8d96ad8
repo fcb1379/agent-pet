@@ -1,0 +1,37 @@
+.github/workflows/build-macos-arm64.yml
+  s_7d3f614556e9df::t_d316bb40867551 1-49
+docs/macos-arm64.md
+  s_7d3f614556e9df::t_6ca6f43d17aaf1 1-70
+bridge/platform-paths.js
+  s_7d3f614556e9df::t_363854294a16bd 1-57
+tests/macos-support.test.js
+  s_7d3f614556e9df::t_dee8cb2325f5c4 1-84
+bridge/agent-pet-bridge.js
+  s_7d3f614556e9df::t_7a80c8804e598a 9,71,313
+package-lock.json
+  s_7d3f614556e9df::t_78758348e993ef 18-20,3474
+package.json
+  s_7d3f614556e9df::t_ac726712131812 4,18-20,48-64,70-72
+scripts/install-hooks.js
+  s_7d3f614556e9df::t_fdfdd6b3185754 38-41,61-66,68,75,77-82,84-94,104,106,109,129,194,217
+src/ai-setup.js
+  s_7d3f614556e9df::t_5e3768a0dcc9ae 21,29,33,36-38,45,52-57,62
+src/release-updater.js
+  s_7d3f614556e9df::t_26fc0379357aed 35-52,55,62,80,94,183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "f0d5baf52f817646c057c92a42a83118a8d96ad8",
+  "prompts": {},
+  "sessions": {
+    "s_7d3f614556e9df": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb0d1-34e3-78e2-ab2d-e6e9c5689dfb",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
