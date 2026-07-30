@@ -1,0 +1,35 @@
+src/sticker-importer.js
+  s_7d3f614556e9df::t_530d64324d2aff 1-254
+tests/sticker-importer.test.js
+  s_7d3f614556e9df::t_c6a52d7f7830ca 1-112
+  s_7d3f614556e9df::t_9664579ae17fd7 113-115
+  s_7d3f614556e9df::t_72b131c7ab1e5c 116-122
+package-lock.json
+  s_7d3f614556e9df::t_fe4c2137a15781 10-13,448-922,2005-2013,3540-3545,3974-4029,4351,4447-4455
+package.json
+  s_7d3f614556e9df::t_e536773bd30a3e 24-27,42-45
+src/main.js
+  s_7d3f614556e9df::t_212fbed24b5780 23,499,506-545,666,676
+src/renderer/renderer.js
+  s_7d3f614556e9df::t_9b0a9120d57ec0 46,276,280,285-292,294-310
+src/settings-store.js
+  s_7d3f614556e9df::t_b6f41d2729e61f 13,54-58,66
+tests/desktop-features.test.js
+  s_7d3f614556e9df::t_497cc906ed3783 55,126,134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "2b0f0b7626b2042a1fe96dc5520a66de078bdb17",
+  "prompts": {},
+  "sessions": {
+    "s_7d3f614556e9df": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb0d1-34e3-78e2-ab2d-e6e9c5689dfb",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
