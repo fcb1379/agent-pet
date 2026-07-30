@@ -1,12 +1,16 @@
 {
   "name": "agent-pet",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "A Windows desktop pet that reflects Codex and Claude Code activity from Windows and WSL.",
   "main": "src/main.js",
   "type": "commonjs",
   "scripts": {
+    "prestart": "node scripts/dependency-bootstrap.js",
     "start": "electron .",
+    "predev": "node scripts/dependency-bootstrap.js",
     "dev": "electron . --dev",
+    "postinstall": "node scripts/dependency-bootstrap.js --stamp",
+    "setup": "npm ci --no-audit --no-fund",
     "test": "node --test tests/*.test.js",
     "install-hooks": "node scripts/install-hooks.js",
     "uninstall-hooks": "node scripts/uninstall-hooks.js",

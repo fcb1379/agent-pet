@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { spawn } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
 const {
     app,
@@ -11,6 +12,7 @@ const {
     ipcMain,
     Menu,
     nativeImage,
+    net,
     shell,
     Tray,
     screen
@@ -21,6 +23,7 @@ const { KeyboardActivityMonitor } = require("./keyboard-activity");
 const { importImageFiles } = require("./custom-assets");
 const { extractForegroundBitmap } = require("./foreground-extractor");
 const { importStickerAnimation } = require("./sticker-importer");
+const { downloadRelease, fetchLatestRelease } = require("./release-updater");
 const { ResourceMonitor } = require("./resource-monitor");
 const { SettingsStore } = require("./settings-store");
 const { StateStore } = require("./state-store");
@@ -42,6 +45,7 @@ let latestResources = null;
 let sessionDetailsOpen = false;
 let isQuitting = false;
 let setupRunning = false;
+let updateChecking = false;
 let positionAdjusting = false;
 let positionAdjustTimer = null;
 let moveSaveTimer = null;
@@ -506,9 +510,9 @@ async function chooseHoverFrames()
 async function chooseStickerAnimation()
 {
     const result = await dialog.showOpenDialog(mainWindow, {
-        title: "选择微信动态表情",
+        title: "选择 GIF 动画",
         properties: ["openFile"],
-        filters: [{ name: "动态表情", extensions: ["gif", "png", "webp"] }]
+        filters: [{ name: "GIF 动画", extensions: ["gif"] }]
     });
     if (result.canceled)
     {
@@ -530,8 +534,8 @@ async function chooseStickerAnimation()
         });
         await dialog.showMessageBox(mainWindow, {
             type: "info",
-            title: "动态表情导入完成",
-            message: `已导入 ${imported.frameCount} 帧 ${String(imported.format).toUpperCase()} 动态表情`,
+            title: "GIF 动画导入完成",
+            message: `已导入 ${imported.frameCount} 帧 GIF 动画`,
             detail: imported.sourceFrameCount > imported.frameCount
                 ? `原始 ${imported.sourceFrameCount} 帧已等时长采样为 ${imported.frameCount} 帧。`
                 : "已保留原始逐帧播放时长，可通过“悬停帧速度”整体调速。",
@@ -540,9 +544,114 @@ async function chooseStickerAnimation()
     }
     catch (error)
     {
-        dialog.showErrorBox("无法导入微信动态表情", error.message);
+        dialog.showErrorBox("无法导入 GIF 动画", error.message);
     }
 }
+
+function launchDownloadedUpdate(filePath)
+{
+    if ("win32" !== process.platform)
+    {
+        shell.openPath(filePath);
+        return;
+    }
+    const powershellPath = path.join(
+        process.env.SystemRoot || "C:\\Windows",
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe"
+    );
+    const escapedPath = filePath.replace(/'/g, "''");
+    const command = `Start-Sleep -Milliseconds 1500; Start-Process -FilePath '${escapedPath}'`;
+    const helper = spawn(
+        powershellPath,
+        ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", command],
+        { detached: true, stdio: "ignore", windowsHide: true }
+    );
+    helper.unref();
+    isQuitting = true;
+    app.quit();
+}
+
+async function checkForUpdates()
+{
+    if (updateChecking)
+    {
+        return;
+    }
+    updateChecking = true;
+    rebuildTrayMenu();
+    try
+    {
+        const fetchImplementation = (url, options) => net.fetch(url, options);
+        const update = await fetchLatestRelease(fetchImplementation, app.getVersion());
+        if (!update.updateAvailable)
+        {
+            await dialog.showMessageBox(mainWindow, {
+                type: "info",
+                title: "Agent Pet 更新",
+                message: `当前已经是最新版本 v${app.getVersion()}`,
+                buttons: ["知道了"]
+            });
+            return;
+        }
+
+        const decision = await dialog.showMessageBox(mainWindow, {
+            type: "info",
+            title: "发现 Agent Pet 新版本",
+            message: `${update.releaseName} 可以下载`,
+            detail: String(update.releaseNotes || "点击下载后会进行 SHA256 校验。").slice(0, 1200),
+            buttons: ["下载更新", "稍后"],
+            defaultId: 0,
+            cancelId: 1
+        });
+        if (0 !== decision.response)
+        {
+            return;
+        }
+
+        const downloaded = await downloadRelease(
+            fetchImplementation,
+            update,
+            app.getPath("downloads"),
+            ({ downloadedBytes, totalBytes }) => {
+                if (tray && 0 < totalBytes)
+                {
+                    const percent = Math.min(100, Math.round((downloadedBytes / totalBytes) * 100));
+                    tray.setToolTip(`Agent Pet · 正在下载更新 ${percent}%`);
+                }
+            }
+        );
+        const completed = await dialog.showMessageBox(mainWindow, {
+            type: "info",
+            title: "Agent Pet 更新下载完成",
+            message: `${update.releaseName} 已下载并通过 SHA256 校验`,
+            detail: downloaded.destinationPath,
+            buttons: ["退出并启动新版本", "打开下载位置", "稍后"],
+            defaultId: 0,
+            cancelId: 2
+        });
+        if (0 === completed.response)
+        {
+            launchDownloadedUpdate(downloaded.destinationPath);
+        }
+        else if (1 === completed.response)
+        {
+            shell.showItemInFolder(downloaded.destinationPath);
+        }
+    }
+    catch (error)
+    {
+        dialog.showErrorBox("Agent Pet 更新失败", error.message);
+    }
+    finally
+    {
+        updateChecking = false;
+        rebuildTrayMenu();
+    }
+}
+
 function rebuildTrayMenu()
 {
     if (!tray || !settings)
@@ -663,7 +772,7 @@ function rebuildTrayMenu()
                     click: (item) => updateSettings({ animation: { autoExtractMascot: item.checked } })
                 },
                 { label: "更换桌宠主图…", click: chooseMascotImage },
-                { label: "导入微信动态表情…", click: chooseStickerAnimation },
+                { label: "导入 GIF 动画…", click: chooseStickerAnimation },
                 { label: "导入悬停动画帧…", click: chooseHoverFrames },
                 {
                     label: "恢复默认主图",
@@ -748,6 +857,11 @@ function rebuildTrayMenu()
         {
             label: "清理已结束会话",
             click: () => stateStore.clearFinished()
+        },
+        {
+            label: updateChecking ? "正在检查更新…" : `检查更新…（当前 v${app.getVersion()}）`,
+            enabled: !updateChecking,
+            click: checkForUpdates
         },
         {
             label: "开机启动",

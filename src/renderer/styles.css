@@ -145,8 +145,10 @@ body.state-error {
     position: absolute;
     left: 34px;
     top: 58px;
+    z-index: 3;
     display: none;
     gap: 5px;
+    pointer-events: none;
 }
 
 #working-dots i {
