@@ -1,0 +1,39 @@
+src/interaction-policy.js
+  s_7d3f614556e9df::t_0e47145a3c8543 1-22
+src/renderer/pointer-hit.js
+  s_7d3f614556e9df::t_2d669dccb14843 1-217
+tests/interaction-policy.test.js
+  s_7d3f614556e9df::t_67c39e6cffcf71 1-35
+src/main.js
+  s_7e0baedc341313::t_2e53314197c46a 27,55,258-265,1057-1065
+src/preload.js
+  s_7e0baedc341313::t_c359d0e29407bd 20
+src/renderer/styles.css
+  s_7e0baedc341313::t_8619abe4ed496e 63
+src/renderer/index.html
+  s_7d3f614556e9df::t_29c1bcbe4bf15b 92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "9b948f90fd43fc34a26ccc551ec31e86f80037d4",
+  "prompts": {},
+  "sessions": {
+    "s_7d3f614556e9df": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb0d1-34e3-78e2-ab2d-e6e9c5689dfb",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    },
+    "s_7e0baedc341313": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8a5c516-844a-4516-92a5-918a57721bd6",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
