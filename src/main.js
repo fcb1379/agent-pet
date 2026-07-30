@@ -24,6 +24,7 @@ const { KeyboardActivityMonitor } = require("./keyboard-activity");
 const { importImageFiles } = require("./custom-assets");
 const { extractForegroundBitmap } = require("./foreground-extractor");
 const { importStickerAnimation } = require("./sticker-importer");
+const { shouldIgnoreMouse } = require("./interaction-policy");
 const { downloadRelease, fetchLatestRelease } = require("./release-updater");
 const { ResourceMonitor } = require("./resource-monitor");
 const { SettingsStore } = require("./settings-store");
@@ -51,6 +52,7 @@ let positionAdjusting = false;
 let positionAdjustTimer = null;
 let moveSaveTimer = null;
 let suppressMoveSaveUntil = 0;
+let rendererHitActive = false;
 
 const BASE_SIZES = Object.freeze({
     pet: { width: 300, height: 350 },
@@ -253,8 +255,14 @@ function applyInteractionMode()
         return;
     }
 
-    const shouldIgnoreMouse = settings.clickThrough && !latestApproval && !positionAdjusting && !sessionDetailsOpen;
-    mainWindow.setIgnoreMouseEvents(shouldIgnoreMouse, { forward: true });
+    const ignoreMouse = shouldIgnoreMouse({
+        clickThrough: settings.clickThrough,
+        hasApproval: Boolean(latestApproval),
+        positionAdjusting,
+        sessionDetailsOpen,
+        rendererHitActive
+    });
+    mainWindow.setIgnoreMouseEvents(ignoreMouse, { forward: true });
 }
 
 function applyWindowSettings()
@@ -1046,6 +1054,15 @@ else
         registerGlobalShortcuts();
 
         ipcMain.on("set-display-mode", (_event, mode) => applyDisplayMode(mode));
+        ipcMain.on("pointer-hit-state", (_event, active) => {
+            const nextHitActive = true === active;
+            if (rendererHitActive === nextHitActive)
+            {
+                return;
+            }
+            rendererHitActive = nextHitActive;
+            applyInteractionMode();
+        });
         ipcMain.on("hide-window", () => {
             mainWindow.hide();
             rebuildTrayMenu();
