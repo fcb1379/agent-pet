@@ -27,6 +27,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -57,6 +59,32 @@ jobs:
         run: |
           set -euo pipefail
           gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG_NAME}" > github-release.json
+
+      - name: Synchronize Git refs to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN || secrets.GITEE }}
+          GITEE_OWNER: reussss
+          GITEE_REPO: agent-pet
+          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          askpass="${RUNNER_TEMP}/gitee-askpass.sh"
+          cat > "$askpass" <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' "$GITEE_OWNER" ;;
+            *) printf '%s\n' "$GITEE_TOKEN" ;;
+          esac
+          EOF
+          chmod 700 "$askpass"
+          trap 'rm -f "$askpass"' EXIT
+          git fetch origin main --tags
+          GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 git \
+            -c credential.helper= \
+            push "https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git" \
+            "refs/remotes/origin/main:refs/heads/main" \
+            "refs/tags/${TAG_NAME}:refs/tags/${TAG_NAME}"
 
       - name: Create Gitee release and upload assets
         env:
