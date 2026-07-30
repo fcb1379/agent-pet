@@ -1,5 +1,6 @@
 "use strict";
 
+const childProcess = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const https = require("node:https");
@@ -141,6 +142,62 @@ function uploadFileWithHttps(options, requestImplementation = https.request)
     });
 }
 
+function uploadFileWithCurl(options, spawnImplementation = childProcess.spawn)
+{
+    const argumentsList = [
+        "--fail-with-body",
+        "--show-error",
+        "--location",
+        "--request",
+        "POST",
+        "--form-string",
+        `access_token=${options.token}`,
+        "--form-string",
+        `owner=${options.owner}`,
+        "--form-string",
+        `repo=${options.repository}`,
+        "--form-string",
+        `release_id=${options.releaseId}`,
+        "--form",
+        `file=@${options.filePath}`,
+        options.url
+    ];
+
+    return new Promise((resolve, reject) => {
+        let output = "";
+        let settled = false;
+        const finish = (error) => {
+            if (settled)
+            {
+                return;
+            }
+            settled = true;
+            if (error)
+            {
+                reject(error);
+                return;
+            }
+            resolve(output);
+        };
+        const child = spawnImplementation("curl", argumentsList, {
+            stdio: ["ignore", "pipe", "inherit"]
+        });
+        child.stdout.setEncoding("utf8");
+        child.stdout.on("data", (chunk) => {
+            output += chunk;
+        });
+        child.once("error", (error) => finish(error));
+        child.once("close", (code, signal) => {
+            if (0 === code)
+            {
+                finish(null);
+                return;
+            }
+            finish(new Error(`curl 上传 Gitee 附件失败：退出码 ${code}，信号 ${signal || "无"}`));
+        });
+    });
+}
+
 class GiteeClient
 {
     constructor(
@@ -148,7 +205,7 @@ class GiteeClient
         owner,
         repository,
         fetchImplementation = globalThis.fetch,
-        uploadImplementation = uploadFileWithHttps
+        uploadImplementation = uploadFileWithCurl
     )
     {
         if (!token)
@@ -379,5 +436,6 @@ module.exports = {
     requiredAssetNames,
     run,
     uploadFileWithHttps,
+    uploadFileWithCurl,
     versionFromTag
 };

@@ -1,16 +1,18 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const { EventEmitter } = require("node:events");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { Readable, Writable } = require("node:stream");
+const { PassThrough, Readable, Writable } = require("node:stream");
 const test = require("node:test");
 const {
     findRequiredAssets,
     GiteeClient,
     releaseFromEvent,
     requiredAssetNames,
+    uploadFileWithCurl,
     uploadFileWithHttps
 } = require("../scripts/sync-gitee-release");
 
@@ -221,4 +223,41 @@ test("Gitee release sync streams multipart uploads without fetch", async () => {
     {
         fs.rmSync(directory, { recursive: true, force: true });
     }
+});
+
+test("Gitee release sync invokes curl with the official multipart fields", async () => {
+    let command;
+    let argumentsList;
+    let spawnOptions;
+    await uploadFileWithCurl({
+        token: "token",
+        url: "https://gitee.com/api/v5/repos/reussss/agent-pet/releases/123/attach_files",
+        owner: "reussss",
+        repository: "agent-pet",
+        releaseId: 123,
+        filePath: "/tmp/AgentPet-0.6.0-portable.exe"
+    }, (executable, argumentsValue, options) => {
+        command = executable;
+        argumentsList = argumentsValue;
+        spawnOptions = options;
+        const child = new EventEmitter();
+        child.stdout = new PassThrough();
+        process.nextTick(() => {
+            child.stdout.end("{\"id\":9}");
+            child.emit("close", 0, null);
+        });
+        return child;
+    });
+
+    assert.equal(command, "curl");
+    assert.deepEqual(spawnOptions.stdio, ["ignore", "pipe", "inherit"]);
+    assert.ok(argumentsList.includes("access_token=token"));
+    assert.ok(argumentsList.includes("owner=reussss"));
+    assert.ok(argumentsList.includes("repo=agent-pet"));
+    assert.ok(argumentsList.includes("release_id=123"));
+    assert.ok(argumentsList.includes("file=@/tmp/AgentPet-0.6.0-portable.exe"));
+    assert.equal(
+        argumentsList.at(-1),
+        "https://gitee.com/api/v5/repos/reussss/agent-pet/releases/123/attach_files"
+    );
 });
