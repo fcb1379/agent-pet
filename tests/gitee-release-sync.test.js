@@ -60,6 +60,24 @@ test("Gitee release sync reads GitHub release metadata", () => {
         body: "changes",
         prerelease: false
     });
+    assert.equal(releaseFromEvent({
+        tag_name: "v0.6.0",
+        target_commitish: "main",
+        name: "Agent Pet v0.6.0",
+        body: "changes",
+        prerelease: false
+    }).tagName, "v0.6.0");
+});
+
+test("Gitee release sync requests a remote mirror pull", async () => {
+    const requests = [];
+    const client = new GiteeClient("token", "reussss", "agent-pet", async (url, options) => {
+        requests.push({ url, options });
+        return jsonResponse({ message: "pulling" }, 202);
+    });
+    assert.equal(await client.triggerMirrorPull(), true);
+    assert.equal(requests[0].options.method, "POST");
+    assert.match(requests[0].url, /\/remote_mirror\/pull$/);
 });
 
 test("Gitee release sync waits for the mirrored tag", async () => {

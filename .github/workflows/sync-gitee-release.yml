@@ -4,12 +4,18 @@ on:
   release:
     types:
       - published
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: GitHub Release tag to synchronize
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: sync-gitee-release-${{ github.event.release.tag_name }}
+  group: sync-gitee-release-${{ github.event.release.tag_name || inputs.tag_name }}
   cancel-in-progress: false
 
 jobs:
@@ -20,17 +26,18 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "24"
+          package-manager-cache: false
 
       - name: Download GitHub release assets
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event.release.tag_name }}
+          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag_name }}
         shell: bash
         run: |
           set -euo pipefail
@@ -42,13 +49,22 @@ jobs:
             --pattern "AgentPet-${version}-portable.exe.sha256" \
             --dir release-assets
 
+      - name: Fetch GitHub release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG_NAME}" > github-release.json
+
       - name: Create Gitee release and upload assets
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN || secrets.GITEE }}
           GITEE_OWNER: reussss
           GITEE_REPO: agent-pet
           RELEASE_ASSETS_DIR: release-assets
-          RELEASE_EVENT_PATH: ${{ github.event_path }}
+          RELEASE_EVENT_PATH: github-release.json
           GITEE_TAG_WAIT_ATTEMPTS: "20"
           GITEE_TAG_WAIT_INTERVAL_MS: "30000"
         run: node scripts/sync-gitee-release.js

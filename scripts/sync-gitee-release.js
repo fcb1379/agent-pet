@@ -108,6 +108,20 @@ class GiteeClient
         return `/repos/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.repository)}${suffix}`;
     }
 
+    async triggerMirrorPull()
+    {
+        const result = await this.request("POST", this.repositoryPath("/remote_mirror/pull"), {
+            allowedStatuses: [400, 404, 409, 422]
+        });
+        if (result.response.ok)
+        {
+            console.log("已请求 Gitee 拉取 GitHub 仓库镜像");
+            return true;
+        }
+        console.warn(`Gitee 镜像拉取请求未被接受（HTTP ${result.response.status}），继续等待现有镜像任务`);
+        return false;
+    }
+
     async waitForTag(tagName, attempts, intervalMilliseconds, sleep = delay)
     {
         for (let attempt = 1; attempt <= attempts; attempt++)
@@ -183,7 +197,7 @@ class GiteeClient
 
 function releaseFromEvent(event)
 {
-    const release = event && event.release;
+    const release = event && (event.release || event);
     if (!release)
     {
         throw new Error("GitHub Release 事件缺少 release 数据");
@@ -223,6 +237,7 @@ async function run(environment = process.env, dependencies = {})
         DEFAULT_TAG_WAIT_INTERVAL_MS
     );
 
+    await client.triggerMirrorPull();
     await client.waitForTag(
         release.tagName,
         attempts,
