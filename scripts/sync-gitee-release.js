@@ -1,6 +1,8 @@
 "use strict";
 
+const crypto = require("node:crypto");
 const fs = require("node:fs");
+const https = require("node:https");
 const path = require("node:path");
 
 const GITEE_API_BASE = "https://gitee.com/api/v5";
@@ -47,9 +49,79 @@ function delay(milliseconds)
     return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function uploadFileWithHttps(options, requestImplementation = https.request)
+{
+    const fileName = path.basename(options.filePath).replace(/["\r\n]/g, "_");
+    const boundary = `----agent-pet-${crypto.randomUUID()}`;
+    const prefix = Buffer.from(
+        `--${boundary}\r\n`
+        + `Content-Disposition: form-data; name="file"; filename="${fileName}"\r\n`
+        + "Content-Type: application/octet-stream\r\n\r\n"
+    );
+    const suffix = Buffer.from(`\r\n--${boundary}--\r\n`);
+    const contentLength = prefix.length + fs.statSync(options.filePath).size + suffix.length;
+
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (error, value) => {
+            if (settled)
+            {
+                return;
+            }
+            settled = true;
+            if (error)
+            {
+                reject(error);
+                return;
+            }
+            resolve(value);
+        };
+        const request = requestImplementation(options.url, {
+            method: "POST",
+            headers: {
+                Accept: "application/json",
+                Authorization: `Bearer ${options.token}`,
+                "Content-Length": String(contentLength),
+                "Content-Type": `multipart/form-data; boundary=${boundary}`,
+                "User-Agent": "agent-pet-gitee-release-sync"
+            }
+        }, (response) => {
+            let responseText = "";
+            response.setEncoding("utf8");
+            response.on("data", (chunk) => {
+                responseText += chunk;
+            });
+            response.on("error", (error) => finish(error));
+            response.on("end", () => {
+                if (200 <= response.statusCode && 300 > response.statusCode)
+                {
+                    finish(null, responseText);
+                    return;
+                }
+                finish(new Error(
+                    `Gitee 附件上传失败（HTTP ${response.statusCode}）：${responseText || "未知错误"}`
+                ));
+            });
+        });
+        request.on("error", (error) => finish(error));
+        request.write(prefix);
+
+        const fileStream = fs.createReadStream(options.filePath);
+        fileStream.on("error", (error) => request.destroy(error));
+        fileStream.on("end", () => request.end(suffix));
+        fileStream.pipe(request, { end: false });
+    });
+}
+
 class GiteeClient
 {
-    constructor(token, owner, repository, fetchImplementation = globalThis.fetch)
+    constructor(
+        token,
+        owner,
+        repository,
+        fetchImplementation = globalThis.fetch,
+        uploadImplementation = uploadFileWithHttps
+    )
     {
         if (!token)
         {
@@ -67,6 +139,7 @@ class GiteeClient
         this.owner = owner;
         this.repository = repository;
         this.fetchImplementation = fetchImplementation;
+        this.uploadImplementation = uploadImplementation;
     }
 
     async request(method, apiPath, options = {})
@@ -191,9 +264,11 @@ class GiteeClient
                 console.log(`Gitee Release 已存在附件，跳过：${fileName}`);
                 continue;
             }
-            const form = new FormData();
-            form.append("file", new Blob([fs.readFileSync(filePath)]), fileName);
-            await this.request("POST", assetsPath, { body: form });
+            await this.uploadImplementation({
+                token: this.token,
+                url: `${GITEE_API_BASE}${assetsPath}`,
+                filePath
+            });
             console.log(`已上传 Gitee Release 附件：${fileName}`);
         }
     }
@@ -272,5 +347,6 @@ module.exports = {
     releaseFromEvent,
     requiredAssetNames,
     run,
+    uploadFileWithHttps,
     versionFromTag
 };

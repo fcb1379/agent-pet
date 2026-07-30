@@ -4,12 +4,14 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { Readable, Writable } = require("node:stream");
 const test = require("node:test");
 const {
     findRequiredAssets,
     GiteeClient,
     releaseFromEvent,
-    requiredAssetNames
+    requiredAssetNames,
+    uploadFileWithHttps
 } = require("../scripts/sync-gitee-release");
 
 function jsonResponse(value, status = 200)
@@ -142,18 +144,68 @@ test("Gitee release sync skips existing assets and uploads missing assets", asyn
     fs.writeFileSync(executable, "exe");
     fs.writeFileSync(checksum, "checksum");
     const requests = [];
+    const uploads = [];
     try
     {
         const client = new GiteeClient("token", "reussss", "agent-pet", async (url, options) => {
             requests.push({ url, options });
-            return "GET" === options.method
-                ? jsonResponse([{ name: path.basename(executable) }])
-                : jsonResponse({ id: 9, name: path.basename(checksum) }, 201);
+            return jsonResponse([{ name: path.basename(executable) }]);
+        }, async (options) => {
+            uploads.push(options);
         });
         await client.uploadMissingAssets(123, [executable, checksum]);
-        const uploads = requests.filter((request) => "POST" === request.options.method);
         assert.equal(uploads.length, 1);
-        assert.ok(uploads[0].options.body instanceof FormData);
+        assert.equal(uploads[0].token, "token");
+        assert.equal(uploads[0].filePath, checksum);
+        assert.match(uploads[0].url, /\/releases\/123\/attach_files$/);
+        assert.equal(requests.length, 1);
+    }
+    finally
+    {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test("Gitee release sync streams multipart uploads without fetch", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pet-gitee-stream-"));
+    const filePath = path.join(directory, "AgentPet-0.6.0-portable.exe");
+    const chunks = [];
+    let requestOptions;
+    fs.writeFileSync(filePath, "portable executable");
+    try
+    {
+        await uploadFileWithHttps({
+            token: "token",
+            url: "https://gitee.com/api/v5/repos/reussss/agent-pet/releases/123/attach_files",
+            filePath
+        }, (url, options, callback) => {
+            assert.match(url, /^https:\/\/gitee\.com\/api\/v5\//);
+            requestOptions = options;
+            const request = new Writable({
+                write(chunk, _encoding, done)
+                {
+                    chunks.push(Buffer.from(chunk));
+                    done();
+                }
+            });
+            request.on("finish", () => {
+                const response = Readable.from(["{\"id\":9}"]);
+                response.statusCode = 201;
+                callback(response);
+            });
+            return request;
+        });
+
+        const body = Buffer.concat(chunks);
+        assert.equal(requestOptions.method, "POST");
+        assert.equal(requestOptions.headers.Authorization, "Bearer token");
+        assert.equal(Number(requestOptions.headers["Content-Length"]), body.length);
+        assert.match(
+            requestOptions.headers["Content-Type"],
+            /^multipart\/form-data; boundary=/
+        );
+        assert.match(body.toString(), /filename="AgentPet-0\.6\.0-portable\.exe"/);
+        assert.match(body.toString(), /portable executable/);
     }
     finally
     {
