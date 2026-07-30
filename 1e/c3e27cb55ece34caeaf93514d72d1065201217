@@ -1,0 +1,19 @@
+tests/update-support.test.js
+  s_1c71804c5456fa::t_74225991c91b4b 100-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "1ec3e27cb55ece34caeaf93514d72d1065201217",
+  "prompts": {},
+  "sessions": {
+    "s_1c71804c5456fa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fabe0-c518-7651-90af-22c2f425b6a8",
+        "model": "unknown"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
