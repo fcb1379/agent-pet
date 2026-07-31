@@ -979,6 +979,7 @@ body.hover-action-squash #mascot {
     display: flex;
     align-items: center;
     gap: 6px;
+    -webkit-app-region: no-drag;
 }
 
 #clear-finished-sessions {
