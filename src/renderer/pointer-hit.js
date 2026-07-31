@@ -3,6 +3,7 @@
 (function initializePointerHitTracking()
 {
     const mascot = document.getElementById("mascot");
+    const woodenFishScene = document.getElementById("wooden-fish-scene");
     if (!mascot || !window.agentPet || "function" !== typeof window.agentPet.setPointerHitState)
     {
         return;
@@ -143,6 +144,17 @@
             || document.body.classList.contains("is-position-adjusting")
             || document.body.classList.contains("has-approval")
             || document.body.classList.contains("has-session-details"))
+        {
+            return true;
+        }
+
+        const woodenFishActive = document.body.classList.contains("is-wooden-fish-hit");
+        if (window.agentPetPointerHitPolicy
+            && window.agentPetPointerHitPolicy.shouldPreserveWoodenFishHit(
+                woodenFishActive,
+                woodenFishScene.getBoundingClientRect(),
+                clientX,
+                clientY))
         {
             return true;
         }
