@@ -2,7 +2,6 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
 const {
     app,
@@ -29,6 +28,7 @@ const { downloadRelease, fetchLatestRelease } = require("./release-updater");
 const { ResourceMonitor } = require("./resource-monitor");
 const { SettingsStore } = require("./settings-store");
 const { StateStore } = require("./state-store");
+const { launchDownloadedUpdate: launchDownloadedApplication } = require("./update-launcher");
 const { createTrayBitmap, TRAY_ICON_SIZE } = require("./tray-icon");
 
 let mainWindow = null;
@@ -583,28 +583,14 @@ async function chooseStickerAnimation()
 
 function launchDownloadedUpdate(filePath)
 {
-    if ("win32" !== process.platform)
+    if ("win32" === process.platform)
     {
-        shell.openPath(filePath);
-        return;
+        isQuitting = true;
     }
-    const powershellPath = path.join(
-        process.env.SystemRoot || "C:\\Windows",
-        "System32",
-        "WindowsPowerShell",
-        "v1.0",
-        "powershell.exe"
-    );
-    const escapedPath = filePath.replace(/'/g, "''");
-    const command = `Start-Sleep -Milliseconds 1500; Start-Process -FilePath '${escapedPath}'`;
-    const helper = spawn(
-        powershellPath,
-        ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", command],
-        { detached: true, stdio: "ignore", windowsHide: true }
-    );
-    helper.unref();
-    isQuitting = true;
-    app.quit();
+    return launchDownloadedApplication(app, filePath, {
+        platform: process.platform,
+        openPath: (downloadedPath) => shell.openPath(downloadedPath)
+    });
 }
 
 async function checkForUpdates()
