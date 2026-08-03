@@ -1,0 +1,21 @@
+src/renderer/styles.css
+  s_7d3f614556e9df::t_c97eefa371cdca 982
+tests/renderer-interaction.test.js
+  s_7d3f614556e9df::t_c8ebd44eabc9a8 26-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "7d90338e3a3b74cc18ff6a8de35535b1c9ea7405",
+  "prompts": {},
+  "sessions": {
+    "s_7d3f614556e9df": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb0d1-34e3-78e2-ab2d-e6e9c5689dfb",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,47 @@
+.github/workflows/sync-gitee-release.yml
+  s_7e0baedc341313::t_e7b71adbdc3c21 1-98
+README.md
+  s_7e0baedc341313::t_6a531ef987ef37 29,154-177
+scripts/after-pack.js
+  s_7e0baedc341313::t_71af0ab725b8c3 1-26
+scripts/sync-gitee-release.js
+  s_7e0baedc341313::t_b1f3b55a41ce80 1-446
+src/main.js
+  s_7e0baedc341313::t_db8569d37495d6 621-625,632,909-921
+src/settings-store.js
+  s_7e0baedc341313::t_ab381ef12c67ce 29,90
+tests/after-pack.test.js
+  s_7e0baedc341313::t_aaa597eec44ca2 1-37
+tests/desktop-features.test.js
+  s_7e0baedc341313::t_a1d5060a191acf 46,68-69
+tests/gitee-release-sync.test.js
+  s_7e0baedc341313::t_482628396684a2 1-263
+src/release-updater.js
+  s_1c71804c5456fa::t_77c4c9bfb55a48 9-28,99-100,102-104,108-112,118-119,207-208
+tests/update-support.test.js
+  s_1c71804c5456fa::t_354435a33be226 18-19,96,98-104,106,110,112,116-162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5f523184cc3857eb714b9dfe9ecef03512bc86f8",
+  "prompts": {},
+  "sessions": {
+    "s_1c71804c5456fa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fabe0-c518-7651-90af-22c2f425b6a8",
+        "model": "unknown"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    },
+    "s_7e0baedc341313": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8a5c516-844a-4516-92a5-918a57721bd6",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+tests/renderer-interaction.test.js
+  s_7d3f614556e9df::t_a4f9c57164e819 1-25
+src/main.js
+  s_7d3f614556e9df::t_f829480acef11e 31,586,588,590-593
+src/renderer/styles.css
+  s_7d3f614556e9df::t_daabc86e7e21a4 80
+src/update-launcher.js
+  s_7d3f614556e9df::t_6cdeb0bf5f87fd 1-27
+tests/update-launcher.test.js
+  s_7d3f614556e9df::t_b65b46486f86dd 1-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.18",
+  "base_commit_sha": "ebb8d79536d02689a2ce862418d30e97f022c1ea",
+  "prompts": {},
+  "sessions": {
+    "s_7d3f614556e9df": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb0d1-34e3-78e2-ab2d-e6e9c5689dfb",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
