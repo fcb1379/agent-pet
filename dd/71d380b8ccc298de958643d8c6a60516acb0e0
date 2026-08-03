@@ -1,0 +1,19 @@
+scripts/export-wooden-fish-assets.js
+  s_abbb2bd46b4afc::t_3ce2aefa90765c 1-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "dd71d380b8ccc298de958643d8c6a60516acb0e0",
+  "prompts": {},
+  "sessions": {
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
