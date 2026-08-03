@@ -37,6 +37,7 @@ const dailyMeritSummary = document.getElementById("daily-merit-summary");
 
 const hardwareButton = document.getElementById("hardware-button");
 const hardwareProtocol = window.AgentPetHardwareProtocol;
+const hardwareStatus = window.AgentPetHardwareStatus;
 const hardwareProtocolEncoder = new hardwareProtocol.HardwareProtocolEncoder();
 let latestSnapshot = { state: "idle", active: null, sessions: [] };
 let typingActive = false;
@@ -65,18 +66,22 @@ const hardwareClient = new window.AgentPetBleClient({
     imageDataSizes: hardwareProtocol.IMAGE_DATA_SIZES,
     encodeReset: hardwareProtocol.encodeMascotReset,
     onStatus: (status, detail) => {
-        const labels = {
-            scanning: "Scanning",
-            connecting: "Connecting",
-            connected: "Connected",
-            synced: "Synced",
-            transferring: "Image",
-            disconnected: "BLE",
-            error: "Retrying"
-        };
+        const presentation = hardwareStatus.hardwareStatusPresentation(status, detail);
         hardwareButton.dataset.status = status;
-        hardwareButton.textContent = labels[status] || "BLE";
-        hardwareButton.title = detail ? `${labels[status] || status} - ${detail}` : (labels[status] || status);
+        hardwareButton.textContent = presentation.text;
+        hardwareButton.title = presentation.title;
+        hardwareButton.style.setProperty(
+            "--transfer-progress",
+            `${null === presentation.percent ? 0 : presentation.percent}%`
+        );
+        if (null === presentation.percent)
+        {
+            hardwareButton.removeAttribute("aria-label");
+        }
+        else
+        {
+            hardwareButton.setAttribute("aria-label", `图片传输 ${presentation.percent}%`);
+        }
     }
 });
 const CLICK_SPEEDS = Object.freeze([

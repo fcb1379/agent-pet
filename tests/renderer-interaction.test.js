@@ -23,3 +23,12 @@ test("wooden fish pointer policy loads before pointer tracking", () => {
         "pointer policy must load before pointer tracking"
     );
 });
+
+test("hardware progress formatter loads before the renderer", () => {
+    const html = fs.readFileSync(path.join(rendererDirectory, "index.html"), "utf8");
+
+    assert.ok(
+        html.indexOf("hardware-status.js") < html.indexOf("renderer.js"),
+        "hardware status formatter must load before the renderer"
+    );
+});
