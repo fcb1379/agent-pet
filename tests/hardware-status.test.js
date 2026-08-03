@@ -11,6 +11,7 @@ test("hardware image transfer progress is visible and bounded", () => {
     assert.equal(transferPercent("37%"), 37);
     assert.equal(transferPercent("120%"), 100);
     assert.equal(transferPercent("unknown"), null);
+    assert.equal(transferPercent("37% · 244 B"), 37);
     assert.deepEqual(hardwareStatusPresentation("transferring", "37%"), {
         percent: 37,
         text: "图片 37%",
@@ -25,4 +26,5 @@ test("hardware status clears transfer progress outside image transfer", () => {
         title: "已同步 - AgentPet-HS52"
     });
     assert.equal(hardwareStatusPresentation("disconnected").text, "BLE");
+    assert.equal(hardwareStatusPresentation("scan_required").text, "重新扫描");
 });

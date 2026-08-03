@@ -1379,6 +1379,13 @@ body.is-wooden-fish-hit #state-badge {
     background: rgba(20, 83, 58, 0.9);
 }
 
+#hardware-button[data-status="scan_required"] {
+    min-width: 62px;
+    border-color: rgba(255, 205, 92, 0.82);
+    color: #fff2bd;
+    background: rgba(94, 65, 18, 0.92);
+}
+
 #hardware-button[data-status="error"] {
     border-color: rgba(255, 121, 121, 0.8);
     color: #ffe0e0;

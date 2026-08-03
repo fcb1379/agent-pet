@@ -3,6 +3,19 @@
 (function exposeAgentPetBleClient(globalObject)
 {
     const RECONNECT_DELAY_MS = 2000;
+    const DEFAULT_RECONNECT_ATTEMPTS = 3;
+
+    function deviceIsUnavailable(error)
+    {
+        const message = String(error && error.message || error || "").toLowerCase();
+        return [
+            "no longer in range",
+            "device unavailable",
+            "device is unavailable",
+            "failed to connect",
+            "gatt server is disconnected"
+        ].some((fragment) => message.includes(fragment));
+    }
 
     class AgentPetBleClient
     {
@@ -11,6 +24,8 @@
             this.serviceUuid = options.serviceUuid;
             this.characteristicUuid = options.characteristicUuid;
             this.imageCharacteristicUuid = options.imageCharacteristicUuid;
+            this.bluetooth = options.bluetooth
+                || (globalObject.navigator && globalObject.navigator.bluetooth);
             this.encodeImage = options.encodeImage;
             this.imageDataSizes = Array.isArray(options.imageDataSizes) && 0 < options.imageDataSizes.length
                 ? [...new Set(options.imageDataSizes.filter((value) => Number.isInteger(value) && 0 < value))]
@@ -25,6 +40,10 @@
             this.syncedImageRevision = null;
             this.writeQueue = Promise.resolve();
             this.reconnectTimer = null;
+            this.reconnectAttempts = 0;
+            this.maxReconnectAttempts = Number.isInteger(options.maxReconnectAttempts)
+                ? Math.max(1, options.maxReconnectAttempts)
+                : DEFAULT_RECONNECT_ATTEMPTS;
             this.manualDisconnect = false;
             this.handleDisconnected = this.handleDisconnected.bind(this);
         }
@@ -36,23 +55,62 @@
 
         async connect()
         {
-            if (!globalObject.navigator || !globalObject.navigator.bluetooth)
+            if (!this.bluetooth)
             {
                 throw new Error("当前系统或 Electron 版本不支持 Web Bluetooth");
             }
 
             this.manualDisconnect = false;
-            this.onStatus("scanning");
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+            this.reconnectAttempts = 0;
             if (!this.device)
             {
-                this.device = await globalObject.navigator.bluetooth.requestDevice({
+                this.onStatus("scanning");
+                const device = await this.bluetooth.requestDevice({
                     acceptAllDevices: true,
                     optionalServices: [this.serviceUuid]
                 });
-                this.device.addEventListener("gattserverdisconnected", this.handleDisconnected);
+                this.setDevice(device);
             }
 
-            await this.connectGatt();
+            try
+            {
+                await this.connectGatt();
+                return true;
+            }
+            catch (error)
+            {
+                if (deviceIsUnavailable(error))
+                {
+                    this.releaseDevice();
+                    this.onStatus("scan_required", "设备句柄已失效，请点击重新扫描");
+                    return false;
+                }
+                throw error;
+            }
+        }
+
+        setDevice(device)
+        {
+            if (this.device && this.device.removeEventListener)
+            {
+                this.device.removeEventListener("gattserverdisconnected", this.handleDisconnected);
+            }
+            this.device = device || null;
+            if (this.device && this.device.addEventListener)
+            {
+                this.device.addEventListener("gattserverdisconnected", this.handleDisconnected);
+            }
+        }
+
+        releaseDevice()
+        {
+            this.setDevice(null);
+            this.characteristic = null;
+            this.imageCharacteristic = null;
+            this.syncedImageRevision = null;
+            this.writeQueue = Promise.resolve();
         }
 
         async connectGatt()
@@ -62,9 +120,10 @@
             const service = await server.getPrimaryService(this.serviceUuid);
             this.characteristic = await service.getCharacteristic(this.characteristicUuid);
             this.imageCharacteristic = await service.getCharacteristic(this.imageCharacteristicUuid);
+            this.reconnectAttempts = 0;
             this.syncedImageRevision = null;
             this.onStatus("connected", this.device.name || "Agent Pet");
-            this.writeQueue = this.writeQueue
+            this.writeQueue = Promise.resolve()
                 .then(() => this.flushLatest())
                 .then(() => this.flushImage());
             await this.writeQueue;
@@ -206,7 +265,51 @@
             this.characteristic = null;
             this.imageCharacteristic = null;
             this.syncedImageRevision = null;
+            this.writeQueue = Promise.resolve();
             this.onStatus("disconnected");
+        }
+
+        scheduleReconnect()
+        {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+            if (this.manualDisconnect || !this.device)
+            {
+                return;
+            }
+            this.reconnectTimer = setTimeout(() => {
+                this.reconnectTimer = null;
+                void this.attemptReconnect();
+            }, RECONNECT_DELAY_MS);
+        }
+
+        async attemptReconnect()
+        {
+            if (this.manualDisconnect || !this.device)
+            {
+                return false;
+            }
+            try
+            {
+                await this.connectGatt();
+                return true;
+            }
+            catch (error)
+            {
+                this.reconnectAttempts++;
+                if (deviceIsUnavailable(error) && this.reconnectAttempts >= this.maxReconnectAttempts)
+                {
+                    this.releaseDevice();
+                    this.onStatus("scan_required", "设备已重启，请点击重新扫描");
+                    return false;
+                }
+                this.onStatus(
+                    "error",
+                    `自动重连 ${this.reconnectAttempts}/${this.maxReconnectAttempts}：${error.message}`
+                );
+                this.scheduleReconnect();
+                return false;
+            }
         }
 
         handleDisconnected()
@@ -214,24 +317,24 @@
             this.characteristic = null;
             this.imageCharacteristic = null;
             this.syncedImageRevision = null;
+            this.writeQueue = Promise.resolve();
             this.onStatus("disconnected");
             if (this.manualDisconnect)
             {
                 return;
             }
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = setTimeout(() => {
-                this.connectGatt().catch((error) => {
-                    this.onStatus("error", error.message);
-                    this.handleDisconnected();
-                });
-            }, RECONNECT_DELAY_MS);
+            this.scheduleReconnect();
         }
     }
 
     globalObject.AgentPetBleClient = AgentPetBleClient;
     if ("undefined" !== typeof module && module.exports)
     {
-        module.exports = { AgentPetBleClient, RECONNECT_DELAY_MS };
+        module.exports = {
+            AgentPetBleClient,
+            DEFAULT_RECONNECT_ATTEMPTS,
+            RECONNECT_DELAY_MS,
+            deviceIsUnavailable
+        };
     }
 })("undefined" !== typeof window ? window : globalThis);

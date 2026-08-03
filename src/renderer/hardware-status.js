@@ -8,13 +8,14 @@
         connected: "已连接",
         synced: "已同步",
         transferring: "图片",
+        scan_required: "重新扫描",
         disconnected: "BLE",
         error: "重试"
     });
 
     function transferPercent(detail)
     {
-        const match = String(detail || "").trim().match(/^(\d{1,3})%$/);
+        const match = String(detail || "").trim().match(/^(\d{1,3})%(?:\s|$)/);
         return match ? Math.max(0, Math.min(100, Number(match[1]))) : null;
     }
 

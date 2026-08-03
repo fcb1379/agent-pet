@@ -28,6 +28,7 @@ test("hardware mascot is persisted as a bounded 336px JPEG", async () => {
         }).png().toFile(sourcePath);
 
         const targetPath = await prepareHardwareMascot(sourcePath, directory);
+        const image = fs.readFileSync(targetPath);
         const metadata = await sharp(targetPath).metadata();
         const stat = fs.statSync(targetPath);
 
@@ -35,6 +36,8 @@ test("hardware mascot is persisted as a bounded 336px JPEG", async () => {
         assert.equal(metadata.format, "jpeg");
         assert.equal(metadata.width, HARDWARE_MASCOT_SIZE);
         assert.equal(metadata.height, HARDWARE_MASCOT_SIZE);
+        assert.equal(metadata.isProgressive, false);
+        assert.equal(image.subarray(0, 10).toString("hex"), "ffd8ffe000104a464946");
         assert.ok(4 < stat.size && stat.size <= HARDWARE_MASCOT_MAX_BYTES);
     }
     finally
