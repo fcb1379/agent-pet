@@ -52,6 +52,7 @@
         <footer id="session-summary" role="button" tabindex="0" title="点击查看每个会话的进度">
             <span id="provider-label">Agent Pet</span>
             <span id="session-count">0 个会话 ›</span>
+            <button id="hardware-button" type="button" title="连接 Agent Pet 硬件">BLE</button>
         </footer>
     </main>
 
@@ -89,6 +90,8 @@
     </section>
 
     <button id="hide-button" title="隐藏">×</button>
+    <script src="../hardware-protocol.js"></script>
+    <script src="ble-client.js"></script>
     <script src="renderer.js"></script>
 </body>
 </html>

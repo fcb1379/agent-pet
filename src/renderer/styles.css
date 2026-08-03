@@ -60,7 +60,6 @@ body.state-error {
     display: flex;
     flex-direction: column;
     align-items: center;
-    -webkit-app-region: drag;
 }
 
 #speech-bubble {
@@ -1342,6 +1341,34 @@ body.is-wooden-fish-hit #state-badge {
 
 #daily-merit-summary.is-visible {
     animation: daily-merit-summary 1900ms ease-out both;
+}
+
+#hardware-button {
+    flex: 0 0 auto;
+    min-width: 38px;
+    height: 20px;
+    padding: 0 7px;
+    border: 1px solid rgba(126, 175, 255, 0.58);
+    border-radius: 10px;
+    color: #dceaff;
+    background: rgba(25, 45, 78, 0.82);
+    font-size: 9px;
+    font-weight: 800;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+}
+
+#hardware-button[data-status="connected"],
+#hardware-button[data-status="synced"] {
+    border-color: rgba(92, 225, 155, 0.78);
+    color: #c9ffe2;
+    background: rgba(20, 83, 58, 0.9);
+}
+
+#hardware-button[data-status="error"] {
+    border-color: rgba(255, 121, 121, 0.8);
+    color: #ffe0e0;
+    background: rgba(102, 36, 45, 0.9);
 }
 
 @keyframes speed-label-pop {

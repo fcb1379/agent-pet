@@ -50,6 +50,10 @@ let positionAdjusting = false;
 let positionAdjustTimer = null;
 let moveSaveTimer = null;
 let suppressMoveSaveUntil = 0;
+let bluetoothSelectionTimer = null;
+let bluetoothSelectionCallback = null;
+
+const BLUETOOTH_SELECTION_TIMEOUT_MS = 15000;
 
 const BASE_SIZES = Object.freeze({
     pet: { width: 300, height: 350 },
@@ -922,6 +926,31 @@ function createWindow()
 
     maintainWindowLayer();
     mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+    mainWindow.webContents.on("select-bluetooth-device", (event, devices, callback) => {
+        event.preventDefault();
+        bluetoothSelectionCallback = callback;
+        const device = devices.find((candidate) => String(candidate.deviceName || "").startsWith("AgentPet-"));
+        if (device)
+        {
+            clearTimeout(bluetoothSelectionTimer);
+            bluetoothSelectionTimer = null;
+            bluetoothSelectionCallback = null;
+            callback(device.deviceId);
+            return;
+        }
+        if (!bluetoothSelectionTimer)
+        {
+            bluetoothSelectionTimer = setTimeout(() => {
+                const pendingCallback = bluetoothSelectionCallback;
+                bluetoothSelectionTimer = null;
+                bluetoothSelectionCallback = null;
+                if (pendingCallback)
+                {
+                    pendingCallback("");
+                }
+            }, BLUETOOTH_SELECTION_TIMEOUT_MS);
+        }
+    });
     mainWindow.once("ready-to-show", () => {
         applyWindowSettings();
         bringWindowToFront();
