@@ -12,6 +12,9 @@
             this.characteristicUuid = options.characteristicUuid;
             this.imageCharacteristicUuid = options.imageCharacteristicUuid;
             this.encodeImage = options.encodeImage;
+            this.imageDataSizes = Array.isArray(options.imageDataSizes) && 0 < options.imageDataSizes.length
+                ? [...new Set(options.imageDataSizes.filter((value) => Number.isInteger(value) && 0 < value))]
+                : [235, 176, 120, 64, 11];
             this.encodeReset = options.encodeReset;
             this.onStatus = options.onStatus || (() => {});
             this.device = null;
@@ -110,22 +113,46 @@
             }
 
             const image = this.latestImage;
-            const frames = image.data
-                ? this.encodeImage(image.data)
-                : this.encodeReset();
-            const progressStep = Math.max(1, Math.floor(frames.length / 20));
+            const dataSizes = image.data ? this.imageDataSizes : [null];
+            let lastError = null;
 
-            for (let index = 0; index < frames.length; index++)
+            for (let attempt = 0; attempt < dataSizes.length; attempt++)
             {
-                await this.imageCharacteristic.writeValueWithResponse(frames[index]);
-                if (0 === index % progressStep || index + 1 === frames.length)
+                const dataSize = dataSizes[attempt];
+                const frames = image.data
+                    ? this.encodeImage(image.data, dataSize)
+                    : this.encodeReset();
+                const progressStep = Math.max(1, Math.floor(frames.length / 20));
+                const packetSize = image.data ? dataSize + 9 : frames[0].length;
+
+                try
                 {
-                    const percent = Math.round(((index + 1) * 100) / frames.length);
-                    this.onStatus("transferring", `${percent}%`);
+                    for (let index = 0; index < frames.length; index++)
+                    {
+                        await this.imageCharacteristic.writeValueWithResponse(frames[index]);
+                        if (0 === index % progressStep || index + 1 === frames.length)
+                        {
+                            const percent = Math.round(((index + 1) * 100) / frames.length);
+                            this.onStatus("transferring", `${percent}% · ${packetSize} B`);
+                        }
+                    }
+                    this.syncedImageRevision = image.revision;
+                    this.onStatus("synced", this.device.name || "Agent Pet");
+                    return;
+                }
+                catch (error)
+                {
+                    lastError = error;
+                    if (!image.data || !this.isConnected() || attempt + 1 === dataSizes.length)
+                    {
+                        throw error;
+                    }
+                    const nextPacketSize = dataSizes[attempt + 1] + 9;
+                    this.onStatus("transferring", `MTU fallback ${nextPacketSize} B`);
                 }
             }
-            this.syncedImageRevision = image.revision;
-            this.onStatus("synced", this.device.name || "Agent Pet");
+
+            throw lastError || new Error("Mascot image transfer failed");
         }
         sendEvent(frames)
         {

@@ -21,28 +21,30 @@ test("CRC-32/MPEG-2 matches the standard check vector", () => {
     assert.equal(crc32Mpeg2(Buffer.from("123456789", "ascii")), 0x0376e6e7);
 });
 
-test("mascot JPEG is split into ordered persistent-transfer frames", () => {
-    const image = Uint8Array.from({ length: 25 }, (_value, index) => index + 1);
+test("mascot JPEG uses negotiated-size packets with ordered offsets and per-packet CRC", () => {
+    const image = Uint8Array.from({ length: 500 }, (_value, index) => (index + 1) & 0xff);
     const frames = encodeMascotImage(image);
 
     assert.equal(frames.length, 5);
-    assert.deepEqual(frames.map((frame) => frame.length), [20, 20, 20, 20, 20]);
+    assert.deepEqual(frames.map((frame) => frame.length), [20, 244, 244, 39, 20]);
     assert.equal(frames[0][0], 0x41);
     assert.equal(frames[0][1], 0x49);
     assert.equal(frames[0][3], 1);
     assert.equal(frames[0][4] | (frames[0][5] << 8) | (frames[0][6] << 16), image.length);
     assert.equal(new DataView(frames[0].buffer).getUint32(8, true), crc32Mpeg2(image));
     assert.equal(frames[1][3], 2);
-    assert.equal(frames[1][7], 11);
-    assert.deepEqual(Array.from(frames[1].subarray(8, 19)), Array.from(image.subarray(0, 11)));
-    assert.equal(frames[3][7], 3);
-    assert.deepEqual(Array.from(frames[3].subarray(8, 11)), Array.from(image.subarray(22)));
+    assert.equal(frames[1][7], 235);
+    assert.deepEqual(Array.from(frames[1].subarray(8, 243)), Array.from(image.subarray(0, 235)));
+    assert.equal(frames[3][4] | (frames[3][5] << 8) | (frames[3][6] << 16), 470);
+    assert.equal(frames[3][7], 30);
+    assert.deepEqual(Array.from(frames[3].subarray(8, 38)), Array.from(image.subarray(470)));
     assert.equal(frames[4][3], 3);
     for (const frame of frames)
     {
-        assert.equal(frame[19], crc8Atm(frame.subarray(0, 19)));
+        assert.equal(frame.at(-1), crc8Atm(frame.subarray(0, -1)));
     }
 });
+
 
 test("default mascot reset is one CRC-protected frame", () => {
     const [frame] = encodeMascotReset();

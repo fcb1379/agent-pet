@@ -62,6 +62,7 @@ const hardwareClient = new window.AgentPetBleClient({
     characteristicUuid: hardwareProtocol.STATUS_RX_UUID,
     imageCharacteristicUuid: hardwareProtocol.IMAGE_RX_UUID,
     encodeImage: hardwareProtocol.encodeMascotImage,
+    imageDataSizes: hardwareProtocol.IMAGE_DATA_SIZES,
     encodeReset: hardwareProtocol.encodeMascotReset,
     onStatus: (status, detail) => {
         const labels = {

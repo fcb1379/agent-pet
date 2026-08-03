@@ -3,6 +3,7 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
 const ALLOWED_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 const MAX_ASSET_BYTES = 25 * 1024 * 1024;
@@ -23,6 +24,23 @@ function validateImageFile(filePath)
     return { extension, size: stat.size };
 }
 
+function versionedImageFileUrl(filePath)
+{
+    if (!filePath || !fs.existsSync(filePath))
+    {
+        return null;
+    }
+
+    const stat = fs.statSync(filePath);
+    if (!stat.isFile())
+    {
+        return null;
+    }
+
+    const url = pathToFileURL(filePath);
+    url.searchParams.set("v", `${stat.size}-${stat.mtimeMs}`);
+    return url.href;
+}
 function importImageFiles(filePaths, assetDirectory, group)
 {
     const files = [...new Set(filePaths.map((value) => path.resolve(value)))];
@@ -54,5 +72,6 @@ module.exports = {
     importImageFiles,
     MAX_ASSET_BYTES,
     MAX_HOVER_FRAMES,
-    validateImageFile
+    validateImageFile,
+    versionedImageFileUrl
 };

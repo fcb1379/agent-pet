@@ -48,3 +48,41 @@ test("BLE client sends a reset frame for the default mascot", async () => {
     await client.flushImage();
     assert.deepEqual(writes, [[4]]);
 });
+
+test("BLE client falls back to the legacy 20-byte packet when a larger MTU is rejected", async () => {
+    const attemptedDataSizes = [];
+    const packetLengths = [];
+    const statuses = [];
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        imageDataSizes: [235, 11],
+        encodeImage: (_data, dataSize) => {
+            attemptedDataSizes.push(dataSize);
+            return [new Uint8Array(20), new Uint8Array(dataSize + 9), new Uint8Array(20)];
+        },
+        encodeReset: () => [new Uint8Array(20)],
+        onStatus: (status, detail) => statuses.push([status, detail])
+    });
+
+    client.device = { name: "test", gatt: { connected: true } };
+    client.characteristic = { writeValueWithResponse: async () => {} };
+    client.imageCharacteristic = {
+        writeValueWithResponse: async (packet) => {
+            packetLengths.push(packet.length);
+            if (20 < packet.length)
+            {
+                throw new Error("GATT operation exceeds MTU");
+            }
+        }
+    };
+    client.latestImage = { revision: "fallback", data: Uint8Array.from([1, 2, 3]) };
+
+    await client.flushImage();
+
+    assert.deepEqual(attemptedDataSizes, [235, 11]);
+    assert.deepEqual(packetLengths, [20, 244, 20, 20, 20]);
+    assert.ok(statuses.some(([status, detail]) => "transferring" === status && detail.includes("fallback 20 B")));
+    assert.equal(client.syncedImageRevision, "fallback");
+});

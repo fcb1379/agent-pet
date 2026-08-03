@@ -17,7 +17,9 @@ const IMAGE_COMMAND_DATA = 2;
 const IMAGE_COMMAND_COMMIT = 3;
 const IMAGE_COMMAND_RESET = 4;
 const IMAGE_FORMAT_JPEG = 1;
-const IMAGE_DATA_SIZE = 11;
+const IMAGE_DATA_SIZE = 235;
+const IMAGE_DATA_SIZES = Object.freeze([235, 176, 120, 64, 11]);
+const IMAGE_PACKET_OVERHEAD = 9;
 
 const STATE_CODES = Object.freeze({
     idle: 0,
@@ -70,7 +72,9 @@ function setUint24(view, offset, value)
 
 function finalizeImageFrame(frame)
 {
-    frame[19] = crc8Atm(frame.subarray(0, 19));
+    const crcOffset = frame.length - 1;
+
+    frame[crcOffset] = crc8Atm(frame.subarray(0, crcOffset));
     return frame;
 }
 
@@ -85,7 +89,7 @@ function encodeMascotReset()
     return [finalizeImageFrame(frame)];
 }
 
-function encodeMascotImage(imageBytes)
+function encodeMascotImage(imageBytes, dataSize = IMAGE_DATA_SIZE)
 {
     const image = imageBytes instanceof Uint8Array
         ? imageBytes
@@ -93,6 +97,11 @@ function encodeMascotImage(imageBytes)
     if (4 > image.length || MAX_MASCOT_IMAGE_BYTES < image.length)
     {
         throw new Error(`硬件桌宠图片必须介于 4 字节和 ${MAX_MASCOT_IMAGE_BYTES} 字节之间`);
+    }
+
+    if (!Number.isInteger(dataSize) || 1 > dataSize || IMAGE_DATA_SIZE < dataSize)
+    {
+        throw new Error(`Invalid mascot image data size: ${dataSize}`);
     }
 
     const imageCrc = crc32Mpeg2(image);
@@ -109,10 +118,10 @@ function encodeMascotImage(imageBytes)
     beginView.setUint32(8, imageCrc, true);
     frames.push(finalizeImageFrame(begin));
 
-    for (let offset = 0; offset < image.length; offset += IMAGE_DATA_SIZE)
+    for (let offset = 0; offset < image.length; offset += dataSize)
     {
-        const frame = new Uint8Array(FRAME_SIZE);
-        const length = Math.min(IMAGE_DATA_SIZE, image.length - offset);
+        const length = Math.min(dataSize, image.length - offset);
+        const frame = new Uint8Array(11 === dataSize ? FRAME_SIZE : IMAGE_PACKET_OVERHEAD + length);
 
         frame[0] = IMAGE_MAGIC_FIRST;
         frame[1] = IMAGE_MAGIC_SECOND;
@@ -307,6 +316,8 @@ const HARDWARE_PROTOCOL_API = Object.freeze({
     IMAGE_COMMAND_DATA,
     IMAGE_COMMAND_RESET,
     IMAGE_DATA_SIZE,
+    IMAGE_DATA_SIZES,
+    IMAGE_PACKET_OVERHEAD,
     IMAGE_FORMAT_JPEG,
     IMAGE_RX_UUID,
     MAX_SESSION_COUNT,

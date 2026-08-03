@@ -2,7 +2,6 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { pathToFileURL } = require("node:url");
 const {
     app,
     BrowserWindow,
@@ -20,7 +19,7 @@ const { agentDataDirectory: platformAgentDataDirectory, approvalDirectory: platf
 const { installLocalAi } = require("./ai-setup");
 const { ApprovalStore } = require("./approval-store");
 const { KeyboardActivityMonitor } = require("./keyboard-activity");
-const { importImageFiles } = require("./custom-assets");
+const { importImageFiles, versionedImageFileUrl } = require("./custom-assets");
 const { HARDWARE_MASCOT_MAX_BYTES, prepareHardwareMascot } = require("./hardware-image");
 const { extractForegroundBitmap } = require("./foreground-extractor");
 const { importStickerAnimation } = require("./sticker-importer");
@@ -86,7 +85,7 @@ function customAssetDirectory()
 
 function imageFileUrl(filePath)
 {
-    return filePath && fs.existsSync(filePath) ? pathToFileURL(filePath).href : null;
+    return versionedImageFileUrl(filePath);
 }
 
 function extractMascotImage(filePath)
