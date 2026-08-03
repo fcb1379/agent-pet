@@ -1,8 +1,9 @@
 # BLE hardware sync
 
 The desktop app acts as the BLE Central and the SF32 Agent Pet acts as the
-Peripheral. The link transports status only; task text, working directories,
-commands, file names, approval contents, and user prompts are never sent.
+Peripheral. The link transports bounded status frames and the user-selected
+mascot JPEG. Task text, working directories, commands, file names, approval
+contents, and user prompts are never sent.
 
 ## GATT contract
 
@@ -10,11 +11,21 @@ commands, file names, approval contents, and user prompts are never sent.
 |---|---|---|
 | Agent Pet service | `7a1e0001-6b5f-4f5c-8c9d-3e2f1a0b1000` | Primary service |
 | Status RX | `7a1e0002-6b5f-4f5c-8c9d-3e2f1a0b1000` | Write Request |
+| Mascot image RX | 7a1e0003-6b5f-4f5c-8c9d-3e2f1a0b1000 | Write Request |
 
 Every write is a fixed 20-byte Agent Pet v1 frame. A complete snapshot contains
 the aggregate pet state plus up to 12 Agent sessions. The desktop sends a new
 complete snapshot after connecting, reconnecting, or observing a state change.
 
+The image characteristic also uses fixed 20-byte frames. Selecting a desktop
+mascot generates the exact 336 x 336 JPEG used by both displays (maximum 128
+KiB). The desktop sends begin, ordered 11-byte data chunks, and commit frames.
+The firmware accepts a commit only after CRC-8 frame checks, ordered offsets,
+CRC-32/MPEG-2 verification, and JPEG SOI/EOI validation. It writes through a
+bounded static worker queue to `/pet.tmp`, then atomically replaces `/pet.jpg`
+with backup recovery. Disconnects discard only the temporary file; normal power
+cycles restore `/pet.jpg`. Restoring the desktop default sends a reset frame and
+returns the device to the built-in mascot.
 The aggregate state drives the hardware pet presentation:
 
 | Desktop state | Code | Hardware pet state |

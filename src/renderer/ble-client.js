@@ -10,10 +10,16 @@
         {
             this.serviceUuid = options.serviceUuid;
             this.characteristicUuid = options.characteristicUuid;
+            this.imageCharacteristicUuid = options.imageCharacteristicUuid;
+            this.encodeImage = options.encodeImage;
+            this.encodeReset = options.encodeReset;
             this.onStatus = options.onStatus || (() => {});
             this.device = null;
             this.characteristic = null;
+            this.imageCharacteristic = null;
             this.latestFrames = [];
+            this.latestImage = { revision: "default", data: null };
+            this.syncedImageRevision = null;
             this.writeQueue = Promise.resolve();
             this.reconnectTimer = null;
             this.manualDisconnect = false;
@@ -22,7 +28,7 @@
 
         isConnected()
         {
-            return Boolean(this.device && this.device.gatt && this.device.gatt.connected && this.characteristic);
+            return Boolean(this.device && this.device.gatt && this.device.gatt.connected && this.characteristic && this.imageCharacteristic);
         }
 
         async connect()
@@ -52,8 +58,12 @@
             const server = await this.device.gatt.connect();
             const service = await server.getPrimaryService(this.serviceUuid);
             this.characteristic = await service.getCharacteristic(this.characteristicUuid);
+            this.imageCharacteristic = await service.getCharacteristic(this.imageCharacteristicUuid);
+            this.syncedImageRevision = null;
             this.onStatus("connected", this.device.name || "Agent Pet");
-            this.writeQueue = this.writeQueue.then(() => this.flushLatest());
+            this.writeQueue = this.writeQueue
+                .then(() => this.flushLatest())
+                .then(() => this.flushImage());
             await this.writeQueue;
         }
 
@@ -70,6 +80,53 @@
             }
         }
 
+        setImage(image)
+        {
+            const revision = image && "string" === typeof image.revision
+                ? image.revision
+                : "default";
+            const data = image && image.data
+                ? Uint8Array.from(image.data)
+                : null;
+            if (revision === this.latestImage.revision)
+            {
+                return;
+            }
+
+            this.latestImage = { revision, data };
+            if (this.isConnected())
+            {
+                this.writeQueue = this.writeQueue
+                    .then(() => this.flushImage())
+                    .catch((error) => this.onStatus("error", error.message));
+            }
+        }
+
+        async flushImage()
+        {
+            if (!this.isConnected() || this.syncedImageRevision === this.latestImage.revision)
+            {
+                return;
+            }
+
+            const image = this.latestImage;
+            const frames = image.data
+                ? this.encodeImage(image.data)
+                : this.encodeReset();
+            const progressStep = Math.max(1, Math.floor(frames.length / 20));
+
+            for (let index = 0; index < frames.length; index++)
+            {
+                await this.imageCharacteristic.writeValueWithResponse(frames[index]);
+                if (0 === index % progressStep || index + 1 === frames.length)
+                {
+                    const percent = Math.round(((index + 1) * 100) / frames.length);
+                    this.onStatus("transferring", `${percent}%`);
+                }
+            }
+            this.syncedImageRevision = image.revision;
+            this.onStatus("synced", this.device.name || "Agent Pet");
+        }
         sendEvent(frames)
         {
             const eventFrames = Array.isArray(frames)
@@ -120,12 +177,16 @@
                 this.device.gatt.disconnect();
             }
             this.characteristic = null;
+            this.imageCharacteristic = null;
+            this.syncedImageRevision = null;
             this.onStatus("disconnected");
         }
 
         handleDisconnected()
         {
             this.characteristic = null;
+            this.imageCharacteristic = null;
+            this.syncedImageRevision = null;
             this.onStatus("disconnected");
             if (this.manualDisconnect)
             {

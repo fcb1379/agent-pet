@@ -21,6 +21,7 @@ const { installLocalAi } = require("./ai-setup");
 const { ApprovalStore } = require("./approval-store");
 const { KeyboardActivityMonitor } = require("./keyboard-activity");
 const { importImageFiles } = require("./custom-assets");
+const { HARDWARE_MASCOT_MAX_BYTES, prepareHardwareMascot } = require("./hardware-image");
 const { extractForegroundBitmap } = require("./foreground-extractor");
 const { importStickerAnimation } = require("./sticker-importer");
 const { shouldIgnoreMouse } = require("./interaction-policy");
@@ -135,6 +136,33 @@ function publicWindowSettings()
             gpu: windowsMetrics && settings.resources.gpu,
             network: windowsMetrics && settings.resources.network
         }
+    };
+}
+async function hardwareMascotPayload()
+{
+    let mascotPath = settings.animation.mascotPath;
+
+    if (!mascotPath || !fs.existsSync(mascotPath))
+    {
+        return { revision: "default", data: null };
+    }
+
+    if ("hardware-mascot.jpg" !== path.basename(mascotPath).toLowerCase())
+    {
+        mascotPath = await prepareHardwareMascot(mascotPath, customAssetDirectory());
+        settings = settingsStore.update({ animation: { mascotPath } });
+        applyWindowSettings();
+    }
+
+    const stat = fs.statSync(mascotPath);
+    if (!stat.isFile() || 4 > stat.size || HARDWARE_MASCOT_MAX_BYTES < stat.size)
+    {
+        throw new Error(`硬件桌宠图片必须小于 ${HARDWARE_MASCOT_MAX_BYTES / 1024} KB`);
+    }
+
+    return {
+        revision: `${stat.size}:${Math.round(stat.mtimeMs)}`,
+        data: Array.from(fs.readFileSync(mascotPath))
     };
 }
 function loginExecutable()
@@ -512,9 +540,10 @@ async function chooseMascotImage()
     try
     {
         const [importedPath] = importImageFiles(result.filePaths, customAssetDirectory(), "mascot");
-        const mascotPath = settings.animation.autoExtractMascot
+        const sourcePath = settings.animation.autoExtractMascot
             ? extractMascotImage(importedPath)
             : importedPath;
+        const mascotPath = await prepareHardwareMascot(sourcePath, customAssetDirectory());
         updateSettings({ animation: { mascotPath } });
     }
     catch (error)
@@ -1110,6 +1139,7 @@ else
                 decideApproval(payload);
             }
         });
+        ipcMain.handle("hardware-mascot-image", () => hardwareMascotPayload());
         ipcMain.handle("dismiss-session", (_event, payload) => {
             if (payload && "object" === typeof payload)
             {

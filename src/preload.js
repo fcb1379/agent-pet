@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("agentPet", {
     setDisplayMode: (mode) => ipcRenderer.send("set-display-mode", mode),
     decideApproval: (decision, requestId = null) => ipcRenderer.send("approval-decision", { decision, requestId }),
     dismissSession: (sessionId, force = false) => ipcRenderer.invoke("dismiss-session", { sessionId, force }),
+    getHardwareMascotImage: () => ipcRenderer.invoke("hardware-mascot-image"),
     clearFinishedSessions: () => ipcRenderer.send("clear-finished-sessions"),
     setSessionDetailsOpen: (open) => ipcRenderer.send("session-details-state", open),
     setPointerHitState: (active) => ipcRenderer.send("pointer-hit-state", true === active),

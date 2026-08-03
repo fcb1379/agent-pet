@@ -52,6 +52,7 @@ let woodenFishTimer = null;
 let meritCount = 0;
 let lastWoodenFishHitAt = 0;
 let dailyMeritSummaryTimer = null;
+let hardwareImageRequest = 0;
 const defaultMascotUrl = mascot.src;
 const HOVER_ACTIONS = ["hop", "wave", "spin", "squash"];
 const DAILY_MERIT_STORAGE_KEY = "agent-pet.daily-merit.v1";
@@ -59,12 +60,16 @@ const WOODEN_FISH_IDLE_MS = 950;
 const hardwareClient = new window.AgentPetBleClient({
     serviceUuid: hardwareProtocol.SERVICE_UUID,
     characteristicUuid: hardwareProtocol.STATUS_RX_UUID,
+    imageCharacteristicUuid: hardwareProtocol.IMAGE_RX_UUID,
+    encodeImage: hardwareProtocol.encodeMascotImage,
+    encodeReset: hardwareProtocol.encodeMascotReset,
     onStatus: (status, detail) => {
         const labels = {
             scanning: "Scanning",
             connecting: "Connecting",
             connected: "Connected",
             synced: "Synced",
+            transferring: "Image",
             disconnected: "BLE",
             error: "Retrying"
         };
@@ -353,6 +358,25 @@ function playRandomHoverAnimation()
     }
 }
 
+async function syncHardwareMascot()
+{
+    const request = ++hardwareImageRequest;
+
+    try
+    {
+        const image = await window.agentPet.getHardwareMascotImage();
+        if (request === hardwareImageRequest)
+        {
+            hardwareClient.setImage(image);
+        }
+    }
+    catch (error)
+    {
+        hardwareButton.dataset.status = "error";
+        hardwareButton.textContent = "BLE !";
+        hardwareButton.title = error.message;
+    }
+}
 function applyAnimationSettings(settings)
 {
     cancelHoverAnimation();
@@ -550,6 +574,7 @@ window.agentPet.onWindowSettings((settings) => {
     document.body.classList.toggle("is-click-through", true === settings.clickThrough);
     applyResourceSettings(settings);
     applyAnimationSettings(settings);
+    void syncHardwareMascot();
 });
 window.agentPet.onResourceUsage(applyResourceUsage);
 window.agentPet.onShowSessionDetails((open) => setSessionDetails(open, false));
