@@ -1,0 +1,35 @@
+docs/ble-hardware-sync.md
+  s_abbb2bd46b4afc::t_d3e7c786e90049 16-36,50,52
+src/custom-assets.js
+  s_abbb2bd46b4afc::t_4c9828adf873c9 6,27-43,75-76
+src/hardware-protocol.js
+  s_abbb2bd46b4afc::t_65697ca13ecd33 20-22,75-77,92,102-106,121,123-124,319-320
+src/main.js
+  s_abbb2bd46b4afc::t_9b5c7dc52ffe94 22,88
+src/renderer/ble-client.js
+  s_abbb2bd46b4afc::t_49493d9ff6c18d 15-17,116-117,119,121-128,130-151,154-155
+src/renderer/renderer.js
+  s_abbb2bd46b4afc::t_bafec201b0f16e 65
+tests/ble-client.test.js
+  s_abbb2bd46b4afc::t_0a0ed158dedc2e 51-88
+tests/desktop-features.test.js
+  s_abbb2bd46b4afc::t_40570598dd919d 13,266-287
+tests/hardware-protocol.test.js
+  s_abbb2bd46b4afc::t_0d6c6ee5cd828f 24-25,29,36-40,44,48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "a2bb84256168ed4d933c48b118c8c195f108fb6e",
+  "prompts": {},
+  "sessions": {
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
