@@ -35,6 +35,9 @@ const woodenFishSound = document.getElementById("wooden-fish-sound");
 const clickSpeedLabel = document.getElementById("click-speed-label");
 const dailyMeritSummary = document.getElementById("daily-merit-summary");
 
+const hardwareButton = document.getElementById("hardware-button");
+const hardwareProtocol = window.AgentPetHardwareProtocol;
+const hardwareProtocolEncoder = new hardwareProtocol.HardwareProtocolEncoder();
 let latestSnapshot = { state: "idle", active: null, sessions: [] };
 let typingActive = false;
 let approvalRequest = null;
@@ -53,6 +56,23 @@ const defaultMascotUrl = mascot.src;
 const HOVER_ACTIONS = ["hop", "wave", "spin", "squash"];
 const DAILY_MERIT_STORAGE_KEY = "agent-pet.daily-merit.v1";
 const WOODEN_FISH_IDLE_MS = 950;
+const hardwareClient = new window.AgentPetBleClient({
+    serviceUuid: hardwareProtocol.SERVICE_UUID,
+    characteristicUuid: hardwareProtocol.STATUS_RX_UUID,
+    onStatus: (status, detail) => {
+        const labels = {
+            scanning: "Scanning",
+            connecting: "Connecting",
+            connected: "Connected",
+            synced: "Synced",
+            disconnected: "BLE",
+            error: "Retrying"
+        };
+        hardwareButton.dataset.status = status;
+        hardwareButton.textContent = labels[status] || "BLE";
+        hardwareButton.title = detail ? `${labels[status] || status} - ${detail}` : (labels[status] || status);
+    }
+});
 const CLICK_SPEEDS = Object.freeze([
     { name: "turbo", maximumInterval: 180, label: "木鱼连击", sound: "咚咚咚！" },
     { name: "fast", maximumInterval: 360, label: "功德加速", sound: "咚咚！" },
@@ -63,6 +83,7 @@ const CLICK_SPEEDS = Object.freeze([
 function applyState(snapshot)
 {
     latestSnapshot = snapshot || latestSnapshot;
+    hardwareClient.setSnapshot(hardwareProtocolEncoder.encode(latestSnapshot).map((frame) => Array.from(frame)));
     const state = Object.hasOwn(STATE_PRESENTATION, latestSnapshot.state) ? latestSnapshot.state : "idle";
     const presentation = STATE_PRESENTATION[state];
     const active = latestSnapshot.active;
@@ -468,6 +489,8 @@ function playWoodenFishHit(clientX, clientY)
     dailyMerit.count++;
     writeDailyMerit(dailyMerit);
     meritCount++;
+    void hardwareClient.sendEvent(
+        hardwareProtocolEncoder.encodeWoodenFishHit().map((frame) => Array.from(frame)));
     meritToast.textContent = "功德 +1";
     meritToast.title = `本轮功德 ${meritCount}`;
     woodenFishSound.textContent = speed.sound;
@@ -616,4 +639,29 @@ document.getElementById("session-details-close").addEventListener("click", () =>
 clearFinishedButton.addEventListener("click", () => window.agentPet.clearFinishedSessions());
 document.getElementById("approval-allow").addEventListener("click", () => submitApproval("allow"));
 document.getElementById("approval-deny").addEventListener("click", () => submitApproval("deny"));
+hardwareButton.addEventListener("keydown", (event) => event.stopPropagation());
+hardwareButton.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    if (hardwareClient.isConnected())
+    {
+        hardwareClient.disconnect();
+        return;
+    }
+    hardwareButton.disabled = true;
+    try
+    {
+        await hardwareClient.connect();
+    }
+    catch (error)
+    {
+        console.error("[Agent Pet BLE]", error);
+        hardwareButton.dataset.status = "error";
+        hardwareButton.textContent = "BLE !";
+        hardwareButton.title = error.message;
+    }
+    finally
+    {
+        hardwareButton.disabled = false;
+    }
+});
 document.getElementById("hide-button").addEventListener("click", () => window.agentPet.hide());
