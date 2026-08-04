@@ -18,6 +18,96 @@ const JFIF_APP0 = Buffer.from([
     0x00, 0x00
 ]);
 
+function isStartOfFrameMarker(marker)
+{
+    return (0xc0 <= marker && 0xcf >= marker &&
+        0xc4 !== marker && 0xc8 !== marker && 0xcc !== marker);
+}
+
+function firmwareJpegInfo(image)
+{
+    if (!Buffer.isBuffer(image) || 32 > image.length ||
+        0xff !== image[0] || 0xd8 !== image[1] ||
+        0xff !== image[image.length - 2] || 0xd9 !== image[image.length - 1])
+    {
+        throw new Error("Hardware mascot is not a complete JPEG");
+    }
+
+    let offset = 2;
+    let frame = null;
+    while (offset < image.length - 2)
+    {
+        if (0xff !== image[offset++])
+        {
+            throw new Error("Hardware mascot has an invalid JPEG marker");
+        }
+        while (offset < image.length && 0xff === image[offset])
+        {
+            offset++;
+        }
+        if (offset >= image.length)
+        {
+            break;
+        }
+
+        const marker = image[offset++];
+        if (0x00 === marker)
+        {
+            throw new Error("Hardware mascot has an escaped marker before scan data");
+        }
+        if (0xd9 === marker)
+        {
+            break;
+        }
+        if (0xd8 === marker || 0x01 === marker || (0xd0 <= marker && 0xd7 >= marker))
+        {
+            continue;
+        }
+        if (offset + 2 > image.length)
+        {
+            throw new Error("Hardware mascot has a truncated JPEG segment");
+        }
+
+        const segmentLength = image.readUInt16BE(offset);
+        if (2 > segmentLength || offset + segmentLength > image.length)
+        {
+            throw new Error("Hardware mascot has an invalid JPEG segment length");
+        }
+        const payload = offset + 2;
+        if (0xc0 === marker)
+        {
+            if (17 !== segmentLength || 8 !== image[payload] || 3 !== image[payload + 5])
+            {
+                throw new Error("Hardware mascot must use 8-bit three-component baseline JPEG");
+            }
+            frame = {
+                height: image.readUInt16BE(payload + 1),
+                width: image.readUInt16BE(payload + 3),
+                sampling: [image[payload + 7], image[payload + 10], image[payload + 13]]
+            };
+        }
+        else if (isStartOfFrameMarker(marker))
+        {
+            throw new Error("Hardware mascot must not use progressive or extended JPEG");
+        }
+        if (0xda === marker)
+        {
+            if (!frame || HARDWARE_MASCOT_SIZE !== frame.width ||
+                HARDWARE_MASCOT_SIZE !== frame.height ||
+                0x22 !== frame.sampling[0] ||
+                0x11 !== frame.sampling[1] ||
+                0x11 !== frame.sampling[2])
+            {
+                throw new Error("Hardware mascot must be 336px baseline JPEG with 4:2:0 sampling");
+            }
+            return frame;
+        }
+        offset += segmentLength;
+    }
+
+    throw new Error("Hardware mascot JPEG has no valid image scan");
+}
+
 function ensureFirmwareJfifHeader(image)
 {
     if (!Buffer.isBuffer(image) || image.length < JPEG_SOI.length ||
@@ -48,7 +138,12 @@ async function encodeHardwareMascot(sourcePath)
 
     for (const quality of JPEG_QUALITIES)
     {
-        const encoded = await sharp(sourcePath, { animated: false, limitInputPixels: 25 * 1024 * 1024 })
+        const encoded = await sharp(sourcePath, {
+            animated: false,
+            page: 0,
+            pages: 1,
+            limitInputPixels: 25 * 1024 * 1024
+        })
             .rotate()
             .resize(HARDWARE_MASCOT_SIZE, HARDWARE_MASCOT_SIZE, {
                 fit: "contain",
@@ -56,9 +151,10 @@ async function encodeHardwareMascot(sourcePath)
                 withoutEnlargement: false
             })
             .flatten({ background: HARDWARE_MASCOT_BACKGROUND })
+            .toColourspace("srgb")
             .jpeg({
                 quality,
-                chromaSubsampling: "4:4:4",
+                chromaSubsampling: "4:2:0",
                 mozjpeg: false,
                 progressive: false
             })
@@ -66,6 +162,7 @@ async function encodeHardwareMascot(sourcePath)
         const image = ensureFirmwareJfifHeader(encoded);
         if (image.length <= HARDWARE_MASCOT_MAX_BYTES)
         {
+            firmwareJpegInfo(image);
             return image;
         }
     }
@@ -107,11 +204,15 @@ async function isFirmwareCompatibleMascot(hardwarePath)
 
     try
     {
-        const metadata = await sharp(image).metadata();
-        return "jpeg" === metadata.format &&
-            HARDWARE_MASCOT_SIZE === metadata.width &&
-            HARDWARE_MASCOT_SIZE === metadata.height &&
-            false === metadata.isProgressive;
+        const info = firmwareJpegInfo(image);
+        const decoded = await sharp(image, {
+            animated: false,
+            limitInputPixels: HARDWARE_MASCOT_SIZE * HARDWARE_MASCOT_SIZE
+        }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+        return HARDWARE_MASCOT_SIZE === info.width &&
+            HARDWARE_MASCOT_SIZE === info.height &&
+            HARDWARE_MASCOT_SIZE === decoded.info.width &&
+            HARDWARE_MASCOT_SIZE === decoded.info.height;
     }
     catch (_error)
     {
@@ -180,6 +281,7 @@ async function findHardwareMascotSource(hardwarePath)
 module.exports = {
     encodeHardwareMascot,
     findHardwareMascotSource,
+    firmwareJpegInfo,
     HARDWARE_MASCOT_BACKGROUND,
     HARDWARE_MASCOT_MAX_BYTES,
     HARDWARE_MASCOT_SIZE,

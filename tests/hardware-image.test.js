@@ -8,6 +8,7 @@ const path = require("node:path");
 const sharp = require("sharp");
 const {
     findHardwareMascotSource,
+    firmwareJpegInfo,
     HARDWARE_MASCOT_MAX_BYTES,
     HARDWARE_MASCOT_SIZE,
     isFirmwareCompatibleMascot,
@@ -46,6 +47,51 @@ test("hardware mascot is persisted as a bounded 336px JPEG", async () => {
     finally
     {
         fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test("animated GIF hardware mascot uses frame zero and safe baseline 4:2:0 JPEG", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pet-hardware-gif-"));
+
+    try
+    {
+        const sourcePath = path.join(directory, "animated.gif");
+        const width = 16;
+        const height = 12;
+        const first = Buffer.alloc(width * height * 4);
+        const second = Buffer.alloc(width * height * 4);
+        for (let index = 0; index < width * height; index++)
+        {
+            first[(index * 4)] = 240;
+            first[(index * 4) + 3] = 255;
+            second[(index * 4) + 2] = 240;
+            second[(index * 4) + 3] = 255;
+        }
+        await sharp(Buffer.concat([first, second]), {
+            raw: { width, height: height * 2, channels: 4, pageHeight: height }
+        }).gif({ delay: [40, 80], loop: 0 }).toFile(sourcePath);
+
+        const targetPath = await prepareHardwareMascot(sourcePath, directory);
+        const image = fs.readFileSync(targetPath);
+        const info = firmwareJpegInfo(image);
+        const center = await sharp(image)
+            .extract({ left: 168, top: 168, width: 1, height: 1 })
+            .raw()
+            .toBuffer();
+
+        assert.deepEqual(info.sampling, [0x22, 0x11, 0x11]);
+        assert.ok(center[0] > center[2], "frame zero must be used instead of the blue second frame");
+        assert.equal(await isFirmwareCompatibleMascot(targetPath), true);
+    }
+    finally
+    {
+        sharp.cache(false);
+        await fs.promises.rm(directory, {
+            recursive: true,
+            force: true,
+            maxRetries: 10,
+            retryDelay: 100
+        });
     }
 });
 
