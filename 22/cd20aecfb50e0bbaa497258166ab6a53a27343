@@ -1,0 +1,51 @@
+package-lock.json
+  s_abbb2bd46b4afc::t_355cc16098d19d 3,9
+package.json
+  s_abbb2bd46b4afc::t_8e3758945cba59 3
+src/hardware-image.js
+  s_abbb2bd46b4afc::t_b5cdd873e852a4 11,93-179,181-182,186
+src/hardware-protocol.js
+  s_abbb2bd46b4afc::t_8cda7cec4777e4 10,13,152-168,311-344,363-368,381,386,398,401
+src/main.js
+  s_abbb2bd46b4afc::t_f7eb11283fcfff 4,24-29,148-152,160-172,174-181,184,190,193-194,575-579,925-930
+src/renderer/ble-client.js
+  s_abbb2bd46b4afc::t_4ee8167498c8c5 27,35-36,38,42,56-78,81,86-89,106-109,115,147,154-157,160-167,171-182,187,191,215-217,223,240-259,341-353,364,367-370,377,389,420,423-428
+src/renderer/index.html
+  s_9e66d5fadca476::t_1b9f1014fa274d 55
+src/renderer/renderer.js
+  s_abbb2bd46b4afc::t_3b8f6228ca1ab3 47,57,66,69,71-72,102-105,377-380,386,398-419,556-560,620,713-716
+src/settings-store.js
+  s_9e66d5fadca476::t_d3af55a3edf93b 24-26,37-38,52-58,106-107,141-144,154,159
+tests/ble-client.test.js
+  s_abbb2bd46b4afc::t_67282b741bb62b 7-32,79-145
+tests/desktop-features.test.js
+  s_9e66d5fadca476::t_699a1b2f8359e3 65-67,73-74
+tests/hardware-image.test.js
+  s_abbb2bd46b4afc::t_21b5fde7b66bb4 10,13,43,51-102
+tests/hardware-protocol.test.js
+  s_abbb2bd46b4afc::t_2ec2c934ad6554 11,13,58-69,91-104,127,132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "22cd20aecfb50e0bbaa497258166ab6a53a27343",
+  "prompts": {},
+  "sessions": {
+    "s_9e66d5fadca476": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fca81-13e3-79e2-8714-eb02261aa41e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    },
+    "s_abbb2bd46b4afc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc6ed-063f-7a23-889d-19eb899eb590",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
