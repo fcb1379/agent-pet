@@ -3,11 +3,23 @@
 const FRAME_SIZE = 20;
 const FRAME_PAYLOAD_SIZE = 10;
 const MAX_SESSION_COUNT = 12;
+const MAX_MASCOT_IMAGE_BYTES = 128 * 1024;
 const SERVICE_UUID = "7a1e0001-6b5f-4f5c-8c9d-3e2f1a0b1000";
 const STATUS_RX_UUID = "7a1e0002-6b5f-4f5c-8c9d-3e2f1a0b1000";
+const IMAGE_RX_UUID = "7a1e0003-6b5f-4f5c-8c9d-3e2f1a0b1000";
 const MESSAGE_TYPE_SNAPSHOT = 1;
 const MESSAGE_TYPE_WOODEN_FISH = 2;
 const WOODEN_FISH_ACTION = 1;
+const IMAGE_MAGIC_FIRST = 0x41;
+const IMAGE_MAGIC_SECOND = 0x49;
+const IMAGE_COMMAND_BEGIN = 1;
+const IMAGE_COMMAND_DATA = 2;
+const IMAGE_COMMAND_COMMIT = 3;
+const IMAGE_COMMAND_RESET = 4;
+const IMAGE_FORMAT_JPEG = 1;
+const IMAGE_DATA_SIZE = 235;
+const IMAGE_DATA_SIZES = Object.freeze([235, 176, 120, 64, 11]);
+const IMAGE_PACKET_OVERHEAD = 9;
 
 const STATE_CODES = Object.freeze({
     idle: 0,
@@ -33,6 +45,108 @@ function crc8Atm(data)
     return crc;
 }
 
+function crc32Mpeg2(data, initial = 0xffffffff)
+{
+    let crc = Number(initial) >>> 0;
+
+    for (const value of data)
+    {
+        crc = (crc ^ ((value & 0xff) << 24)) >>> 0;
+        for (let bit = 0; bit < 8; bit++)
+        {
+            crc = 0 !== (crc & 0x80000000)
+                ? (((crc << 1) ^ 0x04c11db7) >>> 0)
+                : ((crc << 1) >>> 0);
+        }
+    }
+
+    return crc >>> 0;
+}
+
+function setUint24(view, offset, value)
+{
+    view[offset] = value & 0xff;
+    view[offset + 1] = (value >>> 8) & 0xff;
+    view[offset + 2] = (value >>> 16) & 0xff;
+}
+
+function finalizeImageFrame(frame)
+{
+    const crcOffset = frame.length - 1;
+
+    frame[crcOffset] = crc8Atm(frame.subarray(0, crcOffset));
+    return frame;
+}
+
+function encodeMascotReset()
+{
+    const frame = new Uint8Array(FRAME_SIZE);
+
+    frame[0] = IMAGE_MAGIC_FIRST;
+    frame[1] = IMAGE_MAGIC_SECOND;
+    frame[2] = 1;
+    frame[3] = IMAGE_COMMAND_RESET;
+    return [finalizeImageFrame(frame)];
+}
+
+function encodeMascotImage(imageBytes, dataSize = IMAGE_DATA_SIZE)
+{
+    const image = imageBytes instanceof Uint8Array
+        ? imageBytes
+        : Uint8Array.from(imageBytes || []);
+    if (4 > image.length || MAX_MASCOT_IMAGE_BYTES < image.length)
+    {
+        throw new Error(`硬件桌宠图片必须介于 4 字节和 ${MAX_MASCOT_IMAGE_BYTES} 字节之间`);
+    }
+
+    if (!Number.isInteger(dataSize) || 1 > dataSize || IMAGE_DATA_SIZE < dataSize)
+    {
+        throw new Error(`Invalid mascot image data size: ${dataSize}`);
+    }
+
+    const imageCrc = crc32Mpeg2(image);
+    const frames = [];
+    const begin = new Uint8Array(FRAME_SIZE);
+    const beginView = new DataView(begin.buffer);
+
+    begin[0] = IMAGE_MAGIC_FIRST;
+    begin[1] = IMAGE_MAGIC_SECOND;
+    begin[2] = 1;
+    begin[3] = IMAGE_COMMAND_BEGIN;
+    setUint24(begin, 4, image.length);
+    begin[7] = IMAGE_FORMAT_JPEG;
+    beginView.setUint32(8, imageCrc, true);
+    frames.push(finalizeImageFrame(begin));
+
+    for (let offset = 0; offset < image.length; offset += dataSize)
+    {
+        const length = Math.min(dataSize, image.length - offset);
+        const frame = new Uint8Array(11 === dataSize ? FRAME_SIZE : IMAGE_PACKET_OVERHEAD + length);
+
+        frame[0] = IMAGE_MAGIC_FIRST;
+        frame[1] = IMAGE_MAGIC_SECOND;
+        frame[2] = 1;
+        frame[3] = IMAGE_COMMAND_DATA;
+        setUint24(frame, 4, offset);
+        frame[7] = length;
+        frame.set(image.subarray(offset, offset + length), 8);
+        frames.push(finalizeImageFrame(frame));
+    }
+
+    const commit = new Uint8Array(FRAME_SIZE);
+    const commitView = new DataView(commit.buffer);
+
+    commit[0] = IMAGE_MAGIC_FIRST;
+    commit[1] = IMAGE_MAGIC_SECOND;
+    commit[2] = 1;
+    commit[3] = IMAGE_COMMAND_COMMIT;
+    setUint24(commit, 4, image.length);
+    commit[7] = IMAGE_FORMAT_JPEG;
+    commitView.setUint32(8, imageCrc, true);
+    frames.push(finalizeImageFrame(commit));
+
+    return frames;
+}
 function fnv1a32(value)
 {
     let hash = 0x811c9dc5;
@@ -197,7 +311,17 @@ class HardwareProtocolEncoder
 
 const HARDWARE_PROTOCOL_API = Object.freeze({
     FRAME_SIZE,
+    IMAGE_COMMAND_BEGIN,
+    IMAGE_COMMAND_COMMIT,
+    IMAGE_COMMAND_DATA,
+    IMAGE_COMMAND_RESET,
+    IMAGE_DATA_SIZE,
+    IMAGE_DATA_SIZES,
+    IMAGE_PACKET_OVERHEAD,
+    IMAGE_FORMAT_JPEG,
+    IMAGE_RX_UUID,
     MAX_SESSION_COUNT,
+    MAX_MASCOT_IMAGE_BYTES,
     MESSAGE_TYPE_SNAPSHOT,
     MESSAGE_TYPE_WOODEN_FISH,
     WOODEN_FISH_ACTION,
@@ -207,6 +331,9 @@ const HARDWARE_PROTOCOL_API = Object.freeze({
     HardwareProtocolEncoder,
     ageSeconds,
     crc8Atm,
+    crc32Mpeg2,
+    encodeMascotImage,
+    encodeMascotReset,
     encodePayload,
     encodeSnapshot,
     encodeWoodenFishEvent,

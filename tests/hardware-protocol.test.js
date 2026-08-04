@@ -5,6 +5,9 @@ const assert = require("node:assert/strict");
 const {
     HardwareProtocolEncoder,
     crc8Atm,
+    crc32Mpeg2,
+    encodeMascotImage,
+    encodeMascotReset,
     encodeSnapshot,
     encodeWoodenFishEvent,
     fnv1a32
@@ -14,6 +17,42 @@ test("CRC-8/ATM matches the standard check vector", () => {
     assert.equal(crc8Atm(Buffer.from("123456789", "ascii")), 0xf4);
 });
 
+test("CRC-32/MPEG-2 matches the standard check vector", () => {
+    assert.equal(crc32Mpeg2(Buffer.from("123456789", "ascii")), 0x0376e6e7);
+});
+
+test("mascot JPEG uses negotiated-size packets with ordered offsets and per-packet CRC", () => {
+    const image = Uint8Array.from({ length: 500 }, (_value, index) => (index + 1) & 0xff);
+    const frames = encodeMascotImage(image);
+
+    assert.equal(frames.length, 5);
+    assert.deepEqual(frames.map((frame) => frame.length), [20, 244, 244, 39, 20]);
+    assert.equal(frames[0][0], 0x41);
+    assert.equal(frames[0][1], 0x49);
+    assert.equal(frames[0][3], 1);
+    assert.equal(frames[0][4] | (frames[0][5] << 8) | (frames[0][6] << 16), image.length);
+    assert.equal(new DataView(frames[0].buffer).getUint32(8, true), crc32Mpeg2(image));
+    assert.equal(frames[1][3], 2);
+    assert.equal(frames[1][7], 235);
+    assert.deepEqual(Array.from(frames[1].subarray(8, 243)), Array.from(image.subarray(0, 235)));
+    assert.equal(frames[3][4] | (frames[3][5] << 8) | (frames[3][6] << 16), 470);
+    assert.equal(frames[3][7], 30);
+    assert.deepEqual(Array.from(frames[3].subarray(8, 38)), Array.from(image.subarray(470)));
+    assert.equal(frames[4][3], 3);
+    for (const frame of frames)
+    {
+        assert.equal(frame.at(-1), crc8Atm(frame.subarray(0, -1)));
+    }
+});
+
+
+test("default mascot reset is one CRC-protected frame", () => {
+    const [frame] = encodeMascotReset();
+
+    assert.equal(frame.length, 20);
+    assert.equal(frame[3], 4);
+    assert.equal(frame[19], crc8Atm(frame.subarray(0, 19)));
+});
 test("idle snapshot matches the firmware golden frame", () => {
     const [frame] = encodeSnapshot({ state: "idle", sessions: [] }, 0x1234, 0);
     assert.equal(Buffer.from(frame).toString("hex"), "4150010134120001060000000000000000000018");

@@ -10,7 +10,7 @@ const { ApprovalStore } = require("../src/approval-store");
 const { normalizeSettings } = require("../src/settings-store");
 const { windowsPathToWsl } = require("../src/ai-setup");
 const { cpuPercent } = require("../src/resource-monitor");
-const { importImageFiles, validateImageFile } = require("../src/custom-assets");
+const { importImageFiles, validateImageFile, versionedImageFileUrl } = require("../src/custom-assets");
 const { createTrayBitmap, STATUS_RGB, TRAY_ICON_SIZE } = require("../src/tray-icon");
 const { extractForegroundBitmap } = require("../src/foreground-extractor");
 
@@ -257,6 +257,28 @@ test("custom animation assets are copied locally in natural filename order", () 
         assert.equal(imported.length, 2);
         assert.equal(fs.readFileSync(imported[0], "utf8"), "png-2");
         assert.throws(() => validateImageFile(path.join(source, "frame.svg")));
+    }
+    finally
+    {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+test("custom image URL changes when a fixed asset path is overwritten", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pet-asset-url-"));
+    try
+    {
+        const imagePath = path.join(directory, "hardware-mascot.jpg");
+        fs.writeFileSync(imagePath, "first-image");
+        fs.utimesSync(imagePath, new Date(1000), new Date(1000));
+        const firstUrl = versionedImageFileUrl(imagePath);
+
+        fs.writeFileSync(imagePath, "second-image");
+        fs.utimesSync(imagePath, new Date(2000), new Date(2000));
+        const secondUrl = versionedImageFileUrl(imagePath);
+
+        assert.match(firstUrl, /^file:/);
+        assert.notEqual(firstUrl, secondUrl);
+        assert.equal(versionedImageFileUrl(path.join(directory, "missing.jpg")), null);
     }
     finally
     {

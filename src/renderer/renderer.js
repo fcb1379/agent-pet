@@ -37,6 +37,7 @@ const dailyMeritSummary = document.getElementById("daily-merit-summary");
 
 const hardwareButton = document.getElementById("hardware-button");
 const hardwareProtocol = window.AgentPetHardwareProtocol;
+const hardwareStatus = window.AgentPetHardwareStatus;
 const hardwareProtocolEncoder = new hardwareProtocol.HardwareProtocolEncoder();
 let latestSnapshot = { state: "idle", active: null, sessions: [] };
 let typingActive = false;
@@ -52,6 +53,7 @@ let woodenFishTimer = null;
 let meritCount = 0;
 let lastWoodenFishHitAt = 0;
 let dailyMeritSummaryTimer = null;
+let hardwareImageRequest = 0;
 const defaultMascotUrl = mascot.src;
 const HOVER_ACTIONS = ["hop", "wave", "spin", "squash"];
 const DAILY_MERIT_STORAGE_KEY = "agent-pet.daily-merit.v1";
@@ -59,18 +61,27 @@ const WOODEN_FISH_IDLE_MS = 950;
 const hardwareClient = new window.AgentPetBleClient({
     serviceUuid: hardwareProtocol.SERVICE_UUID,
     characteristicUuid: hardwareProtocol.STATUS_RX_UUID,
+    imageCharacteristicUuid: hardwareProtocol.IMAGE_RX_UUID,
+    encodeImage: hardwareProtocol.encodeMascotImage,
+    imageDataSizes: hardwareProtocol.IMAGE_DATA_SIZES,
+    encodeReset: hardwareProtocol.encodeMascotReset,
     onStatus: (status, detail) => {
-        const labels = {
-            scanning: "Scanning",
-            connecting: "Connecting",
-            connected: "Connected",
-            synced: "Synced",
-            disconnected: "BLE",
-            error: "Retrying"
-        };
+        const presentation = hardwareStatus.hardwareStatusPresentation(status, detail);
         hardwareButton.dataset.status = status;
-        hardwareButton.textContent = labels[status] || "BLE";
-        hardwareButton.title = detail ? `${labels[status] || status} - ${detail}` : (labels[status] || status);
+        hardwareButton.textContent = presentation.text;
+        hardwareButton.title = presentation.title;
+        hardwareButton.style.setProperty(
+            "--transfer-progress",
+            `${null === presentation.percent ? 0 : presentation.percent}%`
+        );
+        if (null === presentation.percent)
+        {
+            hardwareButton.removeAttribute("aria-label");
+        }
+        else
+        {
+            hardwareButton.setAttribute("aria-label", `图片传输 ${presentation.percent}%`);
+        }
     }
 });
 const CLICK_SPEEDS = Object.freeze([
@@ -353,6 +364,25 @@ function playRandomHoverAnimation()
     }
 }
 
+async function syncHardwareMascot()
+{
+    const request = ++hardwareImageRequest;
+
+    try
+    {
+        const image = await window.agentPet.getHardwareMascotImage();
+        if (request === hardwareImageRequest)
+        {
+            hardwareClient.setImage(image);
+        }
+    }
+    catch (error)
+    {
+        hardwareButton.dataset.status = "error";
+        hardwareButton.textContent = "BLE !";
+        hardwareButton.title = error.message;
+    }
+}
 function applyAnimationSettings(settings)
 {
     cancelHoverAnimation();
@@ -550,6 +580,7 @@ window.agentPet.onWindowSettings((settings) => {
     document.body.classList.toggle("is-click-through", true === settings.clickThrough);
     applyResourceSettings(settings);
     applyAnimationSettings(settings);
+    void syncHardwareMascot();
 });
 window.agentPet.onResourceUsage(applyResourceUsage);
 window.agentPet.onShowSessionDetails((open) => setSessionDetails(open, false));
