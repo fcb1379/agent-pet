@@ -8,6 +8,7 @@ const HARDWARE_MASCOT_SIZE = 336;
 const HARDWARE_MASCOT_MAX_BYTES = 128 * 1024;
 const HARDWARE_MASCOT_BACKGROUND = Object.freeze({ r: 16, g: 35, b: 43, alpha: 1 });
 const JPEG_QUALITIES = Object.freeze([88, 82, 76, 70, 64, 58, 52, 46]);
+const MAX_SOURCE_PIXEL_DIFFERENCE = 4;
 const JPEG_SOI = Buffer.from([0xff, 0xd8]);
 const JFIF_APP0 = Buffer.from([
     0xff, 0xe0, 0x00, 0x10,
@@ -89,10 +90,99 @@ async function prepareHardwareMascot(sourcePath, assetDirectory)
     return targetPath;
 }
 
+async function isFirmwareCompatibleMascot(hardwarePath)
+{
+    if ("string" !== typeof hardwarePath || !fs.existsSync(hardwarePath))
+    {
+        return false;
+    }
+
+    const image = fs.readFileSync(hardwarePath);
+    if (4 > image.length || HARDWARE_MASCOT_MAX_BYTES < image.length ||
+        10 > image.length ||
+        "ffd8ffe000104a464946" !== image.subarray(0, 10).toString("hex"))
+    {
+        return false;
+    }
+
+    try
+    {
+        const metadata = await sharp(image).metadata();
+        return "jpeg" === metadata.format &&
+            HARDWARE_MASCOT_SIZE === metadata.width &&
+            HARDWARE_MASCOT_SIZE === metadata.height &&
+            false === metadata.isProgressive;
+    }
+    catch (_error)
+    {
+        return false;
+    }
+}
+async function findHardwareMascotSource(hardwarePath)
+{
+    if ("string" !== typeof hardwarePath || !fs.existsSync(hardwarePath))
+    {
+        return null;
+    }
+
+    const hardwareImage = fs.readFileSync(hardwarePath);
+    const hardwarePixels = await sharp(hardwareImage).removeAlpha().raw().toBuffer();
+    const hardwareName = path.basename(hardwarePath).toLowerCase();
+    const candidatePaths = fs.readdirSync(path.dirname(hardwarePath), { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.toLowerCase() !== hardwareName)
+        .map((entry) => path.join(path.dirname(hardwarePath), entry.name))
+        .sort((left, right) => {
+            const leftExtracted = /-extracted\.png$/i.test(left);
+            const rightExtracted = /-extracted\.png$/i.test(right);
+            return Number(rightExtracted) - Number(leftExtracted);
+        });
+    let bestCandidatePath = null;
+    let bestPixelDifference = Number.POSITIVE_INFINITY;
+
+    for (const candidatePath of candidatePaths)
+    {
+        try
+        {
+            const candidateImage = await encodeHardwareMascot(candidatePath);
+            if (hardwareImage.equals(candidateImage))
+            {
+                return candidatePath;
+            }
+
+            const candidatePixels = await sharp(candidateImage).removeAlpha().raw().toBuffer();
+            if (candidatePixels.length !== hardwarePixels.length)
+            {
+                continue;
+            }
+            let totalDifference = 0;
+            for (let index = 0; index < hardwarePixels.length; index++)
+            {
+                totalDifference += Math.abs(hardwarePixels[index] - candidatePixels[index]);
+            }
+            const pixelDifference = totalDifference / hardwarePixels.length;
+            if (pixelDifference < bestPixelDifference)
+            {
+                bestPixelDifference = pixelDifference;
+                bestCandidatePath = candidatePath;
+            }
+        }
+        catch (_error)
+        {
+            /* Ignore unrelated or unreadable files in the mascot asset directory. */
+        }
+    }
+
+    return bestPixelDifference <= MAX_SOURCE_PIXEL_DIFFERENCE
+        ? bestCandidatePath
+        : null;
+}
+
 module.exports = {
+    encodeHardwareMascot,
+    findHardwareMascotSource,
     HARDWARE_MASCOT_BACKGROUND,
     HARDWARE_MASCOT_MAX_BYTES,
     HARDWARE_MASCOT_SIZE,
-    encodeHardwareMascot,
+    isFirmwareCompatibleMascot,
     prepareHardwareMascot
 };

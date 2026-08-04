@@ -4,6 +4,32 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { AgentPetBleClient, deviceIsUnavailable } = require("../src/renderer/ble-client");
 
+test("disabled BLE client stays silent until hardware integration is enabled", async () => {
+    let scanCount = 0;
+    const statuses = [];
+    const client = new AgentPetBleClient({
+        enabled: false,
+        bluetooth: {
+            requestDevice: async () => {
+                scanCount++;
+                return null;
+            }
+        },
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        encodeImage: () => [],
+        encodeReset: () => [],
+        onStatus: (status) => statuses.push(status)
+    });
+
+    assert.equal(await client.connect(), false);
+    client.scheduleReconnect();
+    assert.equal(scanCount, 0);
+    assert.equal(client.reconnectTimer, null);
+    assert.deepEqual(statuses, []);
+});
+
 function connectedDevice(name = "AgentPet-HS52")
 {
     const statusCharacteristic = { writeValueWithResponse: async () => {} };
@@ -50,6 +76,73 @@ test("BLE client serializes a changed mascot and does not resend the same revisi
     assert.equal(writes.length, 2);
 });
 
+test("BLE client skips transfer after reconnect when device MD5 already matches", async () => {
+    const writes = [];
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        imageDigestCharacteristicUuid: "digest",
+        encodeImage: () => [Uint8Array.from([1])],
+        encodeReset: () => [Uint8Array.from([4])],
+        parseImageDigest: () => ({
+            available: true,
+            md5: "d41d8cd98f00b204e9800998ecf8427e"
+        })
+    });
+
+    client.device = { name: "test", gatt: { connected: true } };
+    client.characteristic = { writeValueWithResponse: async () => {} };
+    client.imageCharacteristic = { writeValueWithResponse: async (frame) => writes.push(frame) };
+    client.imageDigestCharacteristic = { readValue: async () => new DataView(new ArrayBuffer(20)) };
+    client.latestImage = {
+        revision: "after-reboot",
+        md5: "d41d8cd98f00b204e9800998ecf8427e",
+        data: Uint8Array.from([1, 2, 3])
+    };
+
+    await client.flushImage();
+
+    assert.equal(writes.length, 0);
+    assert.equal(client.syncedImageRevision, "after-reboot");
+});
+
+test("BLE client sends time before the latest snapshot after every GATT connection", async () => {
+    const writes = [];
+    const statusCharacteristic = {
+        writeValueWithResponse: async (frame) => writes.push(Array.from(frame))
+    };
+    const imageCharacteristic = { writeValueWithResponse: async () => {} };
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        encodeImage: () => [],
+        encodeReset: () => [Uint8Array.from([4])],
+        encodeTimeSync: () => [Uint8Array.from([3])]
+    });
+    client.setDevice({
+        name: "AgentPet-HS52",
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        gatt: {
+            connected: true,
+            connect: async () => ({
+                getPrimaryService: async () => ({
+                    getCharacteristic: async (uuid) => "image" === uuid
+                        ? imageCharacteristic
+                        : statusCharacteristic
+                })
+            })
+        }
+    });
+    client.setSnapshot([Uint8Array.from([1])]);
+
+    await client.connectGatt();
+    await client.connectGatt();
+
+    assert.deepEqual(writes, [[3], [1], [3], [1]]);
+});
 test("BLE client sends a reset frame for the default mascot", async () => {
     const writes = [];
     const client = new AgentPetBleClient({

@@ -24,6 +24,7 @@
             this.serviceUuid = options.serviceUuid;
             this.characteristicUuid = options.characteristicUuid;
             this.imageCharacteristicUuid = options.imageCharacteristicUuid;
+            this.imageDigestCharacteristicUuid = options.imageDigestCharacteristicUuid;
             this.bluetooth = options.bluetooth
                 || (globalObject.navigator && globalObject.navigator.bluetooth);
             this.encodeImage = options.encodeImage;
@@ -31,10 +32,14 @@
                 ? [...new Set(options.imageDataSizes.filter((value) => Number.isInteger(value) && 0 < value))]
                 : [235, 176, 120, 64, 11];
             this.encodeReset = options.encodeReset;
+            this.parseImageDigest = options.parseImageDigest;
+            this.encodeTimeSync = options.encodeTimeSync;
             this.onStatus = options.onStatus || (() => {});
+            this.enabled = false !== options.enabled;
             this.device = null;
             this.characteristic = null;
             this.imageCharacteristic = null;
+            this.imageDigestCharacteristic = null;
             this.latestFrames = [];
             this.latestImage = { revision: "default", data: null };
             this.syncedImageRevision = null;
@@ -48,13 +53,40 @@
             this.handleDisconnected = this.handleDisconnected.bind(this);
         }
 
+        isEnabled()
+        {
+            return this.enabled;
+        }
+
+        setEnabled(enabled)
+        {
+            const nextEnabled = true === enabled;
+            if (nextEnabled === this.enabled)
+            {
+                return;
+            }
+            this.enabled = nextEnabled;
+            if (!this.enabled)
+            {
+                this.disconnect(true);
+            }
+            else
+            {
+                this.manualDisconnect = false;
+            }
+        }
+
         isConnected()
         {
-            return Boolean(this.device && this.device.gatt && this.device.gatt.connected && this.characteristic && this.imageCharacteristic);
+            return Boolean(this.enabled && this.device && this.device.gatt && this.device.gatt.connected && this.characteristic && this.imageCharacteristic);
         }
 
         async connect()
         {
+            if (!this.enabled)
+            {
+                return false;
+            }
             if (!this.bluetooth)
             {
                 throw new Error("当前系统或 Electron 版本不支持 Web Bluetooth");
@@ -71,13 +103,16 @@
                     acceptAllDevices: true,
                     optionalServices: [this.serviceUuid]
                 });
+                if (!this.enabled)
+                {
+                    return false;
+                }
                 this.setDevice(device);
             }
 
             try
             {
-                await this.connectGatt();
-                return true;
+                return await this.connectGatt();
             }
             catch (error)
             {
@@ -109,24 +144,51 @@
             this.setDevice(null);
             this.characteristic = null;
             this.imageCharacteristic = null;
+            this.imageDigestCharacteristic = null;
             this.syncedImageRevision = null;
             this.writeQueue = Promise.resolve();
         }
 
         async connectGatt()
         {
+            if (!this.enabled || !this.device)
+            {
+                return false;
+            }
             this.onStatus("connecting");
             const server = await this.device.gatt.connect();
+            if (!this.enabled)
+            {
+                if (server.disconnect)
+                {
+                    server.disconnect();
+                }
+                return false;
+            }
             const service = await server.getPrimaryService(this.serviceUuid);
             this.characteristic = await service.getCharacteristic(this.characteristicUuid);
             this.imageCharacteristic = await service.getCharacteristic(this.imageCharacteristicUuid);
+            this.imageDigestCharacteristic = null;
+            if (this.imageDigestCharacteristicUuid)
+            {
+                try
+                {
+                    this.imageDigestCharacteristic = await service.getCharacteristic(this.imageDigestCharacteristicUuid);
+                }
+                catch (_error)
+                {
+                    this.imageDigestCharacteristic = null;
+                }
+            }
             this.reconnectAttempts = 0;
             this.syncedImageRevision = null;
             this.onStatus("connected", this.device.name || "Agent Pet");
             this.writeQueue = Promise.resolve()
+                .then(() => this.flushTime())
                 .then(() => this.flushLatest())
                 .then(() => this.flushImage());
             await this.writeQueue;
+            return true;
         }
 
         setSnapshot(frames)
@@ -150,12 +212,15 @@
             const data = image && image.data
                 ? Uint8Array.from(image.data)
                 : null;
+            const md5 = image && "string" === typeof image.md5 && /^[0-9a-f]{32}$/i.test(image.md5)
+                ? image.md5.toLowerCase()
+                : null;
             if (revision === this.latestImage.revision)
             {
                 return;
             }
 
-            this.latestImage = { revision, data };
+            this.latestImage = { revision, md5, data };
             if (this.isConnected())
             {
                 this.writeQueue = this.writeQueue
@@ -172,6 +237,26 @@
             }
 
             const image = this.latestImage;
+            if (this.imageDigestCharacteristic && "function" === typeof this.parseImageDigest)
+            {
+                try
+                {
+                    const digest = this.parseImageDigest(await this.imageDigestCharacteristic.readValue());
+                    const sameImage = image.data
+                        ? Boolean(image.md5 && digest.available && image.md5 === digest.md5)
+                        : !digest.available;
+                    if (sameImage)
+                    {
+                        this.syncedImageRevision = image.revision;
+                        this.onStatus("synced", this.device.name || "Agent Pet");
+                        return;
+                    }
+                }
+                catch (_error)
+                {
+                    /* Older firmware or a transient read failure falls back to a normal transfer. */
+                }
+            }
             const dataSizes = image.data ? this.imageDataSizes : [null];
             let lastError = null;
 
@@ -253,7 +338,19 @@
             this.onStatus("synced", this.device.name || "Agent Pet");
         }
 
-        disconnect()
+        async flushTime()
+        {
+            if (!this.isConnected() || "function" !== typeof this.encodeTimeSync)
+            {
+                return;
+            }
+            const frames = this.encodeTimeSync();
+            for (const frame of frames)
+            {
+                await this.characteristic.writeValueWithResponse(frame);
+            }
+        }
+        disconnect(silent = false)
         {
             this.manualDisconnect = true;
             clearTimeout(this.reconnectTimer);
@@ -264,16 +361,20 @@
             }
             this.characteristic = null;
             this.imageCharacteristic = null;
+            this.imageDigestCharacteristic = null;
             this.syncedImageRevision = null;
             this.writeQueue = Promise.resolve();
-            this.onStatus("disconnected");
+            if (!silent)
+            {
+                this.onStatus("disconnected");
+            }
         }
 
         scheduleReconnect()
         {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
-            if (this.manualDisconnect || !this.device)
+            if (!this.enabled || this.manualDisconnect || !this.device)
             {
                 return;
             }
@@ -285,7 +386,7 @@
 
         async attemptReconnect()
         {
-            if (this.manualDisconnect || !this.device)
+            if (!this.enabled || this.manualDisconnect || !this.device)
             {
                 return false;
             }
@@ -316,8 +417,15 @@
         {
             this.characteristic = null;
             this.imageCharacteristic = null;
+            this.imageDigestCharacteristic = null;
             this.syncedImageRevision = null;
             this.writeQueue = Promise.resolve();
+            if (!this.enabled)
+            {
+                clearTimeout(this.reconnectTimer);
+                this.reconnectTimer = null;
+                return;
+            }
             this.onStatus("disconnected");
             if (this.manualDisconnect)
             {

@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const path = require("node:path");
 const {
     app,
@@ -20,7 +21,12 @@ const { installLocalAi } = require("./ai-setup");
 const { ApprovalStore } = require("./approval-store");
 const { KeyboardActivityMonitor } = require("./keyboard-activity");
 const { importImageFiles, versionedImageFileUrl } = require("./custom-assets");
-const { HARDWARE_MASCOT_MAX_BYTES, prepareHardwareMascot } = require("./hardware-image");
+const {
+    findHardwareMascotSource,
+    HARDWARE_MASCOT_MAX_BYTES,
+    isFirmwareCompatibleMascot,
+    prepareHardwareMascot
+} = require("./hardware-image");
 const { extractForegroundBitmap } = require("./foreground-extractor");
 const { importStickerAnimation } = require("./sticker-importer");
 const { shouldIgnoreMouse } = require("./interaction-policy");
@@ -139,6 +145,11 @@ function publicWindowSettings()
 }
 async function hardwareMascotPayload()
 {
+    if (!settings.hardware.enabled)
+    {
+        return { revision: "disabled", data: null };
+    }
+
     let mascotPath = settings.animation.mascotPath;
 
     if (!mascotPath || !fs.existsSync(mascotPath))
@@ -146,22 +157,41 @@ async function hardwareMascotPayload()
         return { revision: "default", data: null };
     }
 
-    if ("hardware-mascot.jpg" !== path.basename(mascotPath).toLowerCase())
+    let hardwarePath = path.join(customAssetDirectory(), "mascot", "hardware-mascot.jpg");
+    if ("hardware-mascot.jpg" === path.basename(mascotPath).toLowerCase())
     {
-        mascotPath = await prepareHardwareMascot(mascotPath, customAssetDirectory());
-        settings = settingsStore.update({ animation: { mascotPath } });
-        applyWindowSettings();
+        hardwarePath = mascotPath;
+        const restoredMascotPath = await findHardwareMascotSource(hardwarePath);
+        if (restoredMascotPath)
+        {
+            mascotPath = restoredMascotPath;
+            settings = settingsStore.update({ animation: { mascotPath } });
+            applyWindowSettings();
+        }
+    }
+    else
+    {
+        const sourceStat = fs.statSync(mascotPath);
+        const hardwareIsCurrent = fs.existsSync(hardwarePath)
+            && sourceStat.mtimeMs <= fs.statSync(hardwarePath).mtimeMs
+            && await isFirmwareCompatibleMascot(hardwarePath);
+        if (!hardwareIsCurrent)
+        {
+            hardwarePath = await prepareHardwareMascot(mascotPath, customAssetDirectory());
+        }
     }
 
-    const stat = fs.statSync(mascotPath);
+    const stat = fs.statSync(hardwarePath);
     if (!stat.isFile() || 4 > stat.size || HARDWARE_MASCOT_MAX_BYTES < stat.size)
     {
         throw new Error(`硬件桌宠图片必须小于 ${HARDWARE_MASCOT_MAX_BYTES / 1024} KB`);
     }
 
+    const imageData = fs.readFileSync(hardwarePath);
     return {
         revision: `${stat.size}:${Math.round(stat.mtimeMs)}`,
-        data: Array.from(fs.readFileSync(mascotPath))
+        md5: crypto.createHash("md5").update(imageData).digest("hex"),
+        data: Array.from(imageData)
     };
 }
 function loginExecutable()
@@ -542,8 +572,11 @@ async function chooseMascotImage()
         const sourcePath = settings.animation.autoExtractMascot
             ? extractMascotImage(importedPath)
             : importedPath;
-        const mascotPath = await prepareHardwareMascot(sourcePath, customAssetDirectory());
-        updateSettings({ animation: { mascotPath } });
+        if (settings.hardware.enabled)
+        {
+            await prepareHardwareMascot(sourcePath, customAssetDirectory());
+        }
+        updateSettings({ animation: { mascotPath: sourcePath } });
     }
     catch (error)
     {
@@ -888,6 +921,12 @@ function rebuildTrayMenu()
             checked: "win32" === process.platform && settings.keyboardAnimation,
             enabled: "win32" === process.platform,
             click: (item) => updateSettings({ keyboardAnimation: item.checked })
+        },
+        {
+            label: "启用 BLE 硬件联动",
+            type: "checkbox",
+            checked: settings.hardware.enabled,
+            click: (item) => updateSettings({ hardware: { enabled: item.checked } })
         },
         { type: "separator" },
         {

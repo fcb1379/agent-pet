@@ -8,7 +8,9 @@ const {
     crc32Mpeg2,
     encodeMascotImage,
     encodeMascotReset,
+    parseMascotDigest,
     encodeSnapshot,
+    encodeTimeSync,
     encodeWoodenFishEvent,
     fnv1a32
 } = require("../src/hardware-protocol");
@@ -53,6 +55,18 @@ test("default mascot reset is one CRC-protected frame", () => {
     assert.equal(frame[3], 4);
     assert.equal(frame[19], crc8Atm(frame.subarray(0, 19)));
 });
+test("mascot digest response exposes the persistent device image MD5", () => {
+    const response = Uint8Array.from([
+        0x41, 0x49, 0x01, 0x01,
+        0xd4, 0x1d, 0x8c, 0xd9, 0x8f, 0x00, 0xb2, 0x04,
+        0xe9, 0x80, 0x09, 0x98, 0xec, 0xf8, 0x42, 0x7e
+    ]);
+
+    assert.deepEqual(parseMascotDigest(new DataView(response.buffer)), {
+        available: true,
+        md5: "d41d8cd98f00b204e9800998ecf8427e"
+    });
+});
 test("idle snapshot matches the firmware golden frame", () => {
     const [frame] = encodeSnapshot({ state: "idle", sessions: [] }, 0x1234, 0);
     assert.equal(Buffer.from(frame).toString("hex"), "4150010134120001060000000000000000000018");
@@ -74,6 +88,20 @@ test("wooden fish click is encoded as a single deduplicated event frame", () => 
     assert.equal(frame[19], crc8Atm(frame.subarray(0, 19)));
 });
 
+test("time sync encodes UTC epoch and signed timezone in one frame", () => {
+    const frame = encodeTimeSync(0x2468, Date.parse("2026-08-04T03:02:01Z"), 480);
+    const view = new DataView(frame.buffer);
+
+    assert.equal(frame.length, 20);
+    assert.equal(frame[3], 3);
+    assert.equal(view.getUint16(4, true), 0x2468);
+    assert.equal(frame[6], 0);
+    assert.equal(frame[7], 1);
+    assert.equal(frame[8], 6);
+    assert.equal(view.getUint32(9, true), 1785812521);
+    assert.equal(view.getInt16(13, true), 480);
+    assert.equal(frame[19], crc8Atm(frame.subarray(0, 19)));
+});
 test("snapshot maps agent and pet state into bounded GATT frames", () => {
     const now = Date.parse("2026-08-03T12:00:10Z");
     const snapshot = {
@@ -96,11 +124,12 @@ test("snapshot maps agent and pet state into bounded GATT frames", () => {
     assert.equal(frames[1][19], crc8Atm(frames[1].subarray(0, 19)));
 });
 
-test("encoder shares its sequence across snapshots and wooden fish events", () => {
+test("encoder shares its sequence across snapshots, events, and time sync", () => {
     const encoder = new HardwareProtocolEncoder(10);
 
     assert.equal(new DataView(encoder.encode({ state: "idle" }, 0)[0].buffer).getUint16(4, true), 11);
     assert.equal(new DataView(encoder.encodeWoodenFishHit()[0].buffer).getUint16(4, true), 12);
+    assert.equal(new DataView(encoder.encodeTimeSync(Date.parse("2026-08-04T00:00:00Z"), 0)[0].buffer).getUint16(4, true), 13);
 });
 
 test("encoder increments the sequence number for every complete snapshot", () => {

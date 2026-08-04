@@ -62,11 +62,16 @@ test("settings accept only supported size and opacity presets", () => {
             gpu: true,
             memory: true,
             network: true
+        },
+        hardware: {
+            enabled: false
         }
     });
     assert.equal(normalizeSettings({ scale: 9 }).scale, 1);
     assert.equal(normalizeSettings({ updateSource: "gitee" }).updateSource, "gitee");
     assert.equal(normalizeSettings({ updateSource: "unknown" }).updateSource, "github");
+    assert.equal(normalizeSettings({ hardware: { enabled: true } }).hardware.enabled, true);
+    assert.equal(normalizeSettings({ hardware: { enabled: "yes" } }).hardware.enabled, false);
 });
 
 test("approval decisions are written only for existing safe requests", () => {

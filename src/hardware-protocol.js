@@ -7,8 +7,10 @@ const MAX_MASCOT_IMAGE_BYTES = 128 * 1024;
 const SERVICE_UUID = "7a1e0001-6b5f-4f5c-8c9d-3e2f1a0b1000";
 const STATUS_RX_UUID = "7a1e0002-6b5f-4f5c-8c9d-3e2f1a0b1000";
 const IMAGE_RX_UUID = "7a1e0003-6b5f-4f5c-8c9d-3e2f1a0b1000";
+const IMAGE_DIGEST_UUID = "7a1e0004-6b5f-4f5c-8c9d-3e2f1a0b1000";
 const MESSAGE_TYPE_SNAPSHOT = 1;
 const MESSAGE_TYPE_WOODEN_FISH = 2;
+const MESSAGE_TYPE_TIME_SYNC = 3;
 const WOODEN_FISH_ACTION = 1;
 const IMAGE_MAGIC_FIRST = 0x41;
 const IMAGE_MAGIC_SECOND = 0x49;
@@ -146,6 +148,23 @@ function encodeMascotImage(imageBytes, dataSize = IMAGE_DATA_SIZE)
     frames.push(finalizeImageFrame(commit));
 
     return frames;
+}
+function parseMascotDigest(value)
+{
+    const bytes = value instanceof DataView
+        ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+        : Uint8Array.from(value || []);
+    if (FRAME_SIZE !== bytes.length || IMAGE_MAGIC_FIRST !== bytes[0] ||
+        IMAGE_MAGIC_SECOND !== bytes[1] || 1 !== bytes[2])
+    {
+        throw new Error("Invalid mascot digest response");
+    }
+
+    const available = 0 !== (bytes[3] & 0x01);
+    const md5 = available
+        ? Array.from(bytes.subarray(4, 20), (byte) => byte.toString(16).padStart(2, "0")).join("")
+        : null;
+    return { available, md5 };
 }
 function fnv1a32(value)
 {
@@ -289,6 +308,40 @@ function encodeWoodenFishEvent(sequence)
     return frame;
 }
 
+function encodeTimeSync(sequence, now = Date.now(), timezoneOffsetMinutes = null)
+{
+    const timestamp = now instanceof Date ? now.getTime() : Number(now);
+    const epochSeconds = Math.floor(timestamp / 1000);
+    const timezoneMinutes = null === timezoneOffsetMinutes
+        ? -new Date(timestamp).getTimezoneOffset()
+        : Number(timezoneOffsetMinutes);
+    if (!Number.isFinite(timestamp) || !Number.isInteger(epochSeconds) ||
+        1577836800 > epochSeconds || 2145916800 < epochSeconds)
+    {
+        throw new Error("Time sync timestamp must be between 2020 and 2038");
+    }
+    if (!Number.isInteger(timezoneMinutes) || -840 > timezoneMinutes || 840 < timezoneMinutes)
+    {
+        throw new Error("Time sync timezone must be between -840 and 840 minutes");
+    }
+
+    const frame = new Uint8Array(FRAME_SIZE);
+    const view = new DataView(frame.buffer);
+
+    frame[0] = 0x41;
+    frame[1] = 0x50;
+    frame[2] = 1;
+    frame[3] = MESSAGE_TYPE_TIME_SYNC;
+    view.setUint16(4, Number(sequence) & 0xffff, true);
+    frame[6] = 0;
+    frame[7] = 1;
+    frame[8] = 6;
+    view.setUint32(9, epochSeconds, true);
+    view.setInt16(13, timezoneMinutes, true);
+    frame[19] = crc8Atm(frame.subarray(0, 19));
+
+    return frame;
+}
 class HardwareProtocolEncoder
 {
     constructor(sequence = 0)
@@ -307,6 +360,12 @@ class HardwareProtocolEncoder
         this.sequence = (this.sequence + 1) & 0xffff;
         return [encodeWoodenFishEvent(this.sequence)];
     }
+
+    encodeTimeSync(now = Date.now(), timezoneOffsetMinutes = null)
+    {
+        this.sequence = (this.sequence + 1) & 0xffff;
+        return [encodeTimeSync(this.sequence, now, timezoneOffsetMinutes)];
+    }
 }
 
 const HARDWARE_PROTOCOL_API = Object.freeze({
@@ -319,10 +378,12 @@ const HARDWARE_PROTOCOL_API = Object.freeze({
     IMAGE_DATA_SIZES,
     IMAGE_PACKET_OVERHEAD,
     IMAGE_FORMAT_JPEG,
+    IMAGE_DIGEST_UUID,
     IMAGE_RX_UUID,
     MAX_SESSION_COUNT,
     MAX_MASCOT_IMAGE_BYTES,
     MESSAGE_TYPE_SNAPSHOT,
+    MESSAGE_TYPE_TIME_SYNC,
     MESSAGE_TYPE_WOODEN_FISH,
     WOODEN_FISH_ACTION,
     SERVICE_UUID,
@@ -334,8 +395,10 @@ const HARDWARE_PROTOCOL_API = Object.freeze({
     crc32Mpeg2,
     encodeMascotImage,
     encodeMascotReset,
+    parseMascotDigest,
     encodePayload,
     encodeSnapshot,
+    encodeTimeSync,
     encodeWoodenFishEvent,
     fnv1a32,
     providerCode,

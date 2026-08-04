@@ -21,6 +21,9 @@ const DEFAULT_RESOURCES = Object.freeze({
     memory: true,
     network: true
 });
+const DEFAULT_HARDWARE = Object.freeze({
+    enabled: false
+});
 
 const DEFAULT_SETTINGS = Object.freeze({
     clickThrough: false,
@@ -31,7 +34,8 @@ const DEFAULT_SETTINGS = Object.freeze({
     scale: 1,
     position: null,
     animation: DEFAULT_ANIMATION,
-    resources: DEFAULT_RESOURCES
+    resources: DEFAULT_RESOURCES,
+    hardware: DEFAULT_HARDWARE
 });
 
 function normalizeResources(value = {})
@@ -42,6 +46,13 @@ function normalizeResources(value = {})
         gpu: false !== value.gpu,
         memory: false !== value.memory,
         network: false !== value.network
+    };
+}
+
+function normalizeHardware(value = {})
+{
+    return {
+        enabled: true === value.enabled
     };
 }
 
@@ -92,7 +103,8 @@ function normalizeSettings(value = {})
         scale,
         position: normalizePosition(value.position),
         animation: normalizeAnimation(value.animation),
-        resources: normalizeResources(value.resources)
+        resources: normalizeResources(value.resources),
+        hardware: normalizeHardware(value.hardware)
     };
 }
 
@@ -126,7 +138,10 @@ class SettingsStore
         const animation = changes.animation
             ? { ...this.value.animation, ...changes.animation }
             : this.value.animation;
-        this.value = normalizeSettings({ ...this.value, ...changes, animation, resources });
+        const hardware = changes.hardware
+            ? { ...this.value.hardware, ...changes.hardware }
+            : this.value.hardware;
+        this.value = normalizeSettings({ ...this.value, ...changes, animation, resources, hardware });
         fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
         fs.writeFileSync(this.filePath, `${JSON.stringify(this.value, null, 2)}\n`, "utf8");
         return this.value;
@@ -136,10 +151,12 @@ class SettingsStore
 module.exports = {
     ANIMATION_STYLES,
     DEFAULT_ANIMATION,
+    DEFAULT_HARDWARE,
     DEFAULT_RESOURCES,
     DEFAULT_SETTINGS,
     SettingsStore,
     normalizeAnimation,
+    normalizeHardware,
     normalizePosition,
     normalizeResources,
     normalizeSettings

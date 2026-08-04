@@ -44,7 +44,7 @@ let typingActive = false;
 let approvalRequest = null;
 let approvalRequests = [];
 let latestResources = null;
-let windowSettings = { resources: { enabled: true, cpu: true, gpu: true, memory: true, network: true } };
+let windowSettings = { hardware: { enabled: false }, resources: { enabled: true, cpu: true, gpu: true, memory: true, network: true } };
 let positionAdjusting = false;
 let sessionDetailsOpen = false;
 let animationSettings = { style: "classic", hoverEnabled: true, mascotUrl: null, hoverFrameUrls: [], hoverFrameDurations: [], hoverFrameMs: 110 };
@@ -54,6 +54,7 @@ let meritCount = 0;
 let lastWoodenFishHitAt = 0;
 let dailyMeritSummaryTimer = null;
 let hardwareImageRequest = 0;
+let hardwareEnabled = false;
 const defaultMascotUrl = mascot.src;
 const HOVER_ACTIONS = ["hop", "wave", "spin", "squash"];
 const DAILY_MERIT_STORAGE_KEY = "agent-pet.daily-merit.v1";
@@ -62,9 +63,13 @@ const hardwareClient = new window.AgentPetBleClient({
     serviceUuid: hardwareProtocol.SERVICE_UUID,
     characteristicUuid: hardwareProtocol.STATUS_RX_UUID,
     imageCharacteristicUuid: hardwareProtocol.IMAGE_RX_UUID,
+    imageDigestCharacteristicUuid: hardwareProtocol.IMAGE_DIGEST_UUID,
     encodeImage: hardwareProtocol.encodeMascotImage,
     imageDataSizes: hardwareProtocol.IMAGE_DATA_SIZES,
+    enabled: false,
     encodeReset: hardwareProtocol.encodeMascotReset,
+    parseImageDigest: hardwareProtocol.parseMascotDigest,
+    encodeTimeSync: () => hardwareProtocolEncoder.encodeTimeSync(),
     onStatus: (status, detail) => {
         const presentation = hardwareStatus.hardwareStatusPresentation(status, detail);
         hardwareButton.dataset.status = status;
@@ -94,7 +99,10 @@ const CLICK_SPEEDS = Object.freeze([
 function applyState(snapshot)
 {
     latestSnapshot = snapshot || latestSnapshot;
-    hardwareClient.setSnapshot(hardwareProtocolEncoder.encode(latestSnapshot).map((frame) => Array.from(frame)));
+    if (hardwareEnabled)
+    {
+        hardwareClient.setSnapshot(hardwareProtocolEncoder.encode(latestSnapshot).map((frame) => Array.from(frame)));
+    }
     const state = Object.hasOwn(STATE_PRESENTATION, latestSnapshot.state) ? latestSnapshot.state : "idle";
     const presentation = STATE_PRESENTATION[state];
     const active = latestSnapshot.active;
@@ -366,12 +374,16 @@ function playRandomHoverAnimation()
 
 async function syncHardwareMascot()
 {
+    if (!hardwareEnabled)
+    {
+        return;
+    }
     const request = ++hardwareImageRequest;
 
     try
     {
         const image = await window.agentPet.getHardwareMascotImage();
-        if (request === hardwareImageRequest)
+        if (hardwareEnabled && request === hardwareImageRequest)
         {
             hardwareClient.setImage(image);
         }
@@ -382,6 +394,28 @@ async function syncHardwareMascot()
         hardwareButton.textContent = "BLE !";
         hardwareButton.title = error.message;
     }
+}
+
+function applyHardwareSettings(settings)
+{
+    const enabled = true === settings.hardware?.enabled;
+    const changed = enabled !== hardwareEnabled;
+    hardwareEnabled = enabled;
+    hardwareButton.hidden = !hardwareEnabled;
+    hardwareClient.setEnabled(hardwareEnabled);
+
+    if (!hardwareEnabled)
+    {
+        hardwareImageRequest++;
+        return;
+    }
+    if (changed)
+    {
+        hardwareClient.setSnapshot(
+            hardwareProtocolEncoder.encode(latestSnapshot).map((frame) => Array.from(frame))
+        );
+    }
+    void syncHardwareMascot();
 }
 function applyAnimationSettings(settings)
 {
@@ -519,8 +553,11 @@ function playWoodenFishHit(clientX, clientY)
     dailyMerit.count++;
     writeDailyMerit(dailyMerit);
     meritCount++;
-    void hardwareClient.sendEvent(
-        hardwareProtocolEncoder.encodeWoodenFishHit().map((frame) => Array.from(frame)));
+    if (hardwareEnabled)
+    {
+        void hardwareClient.sendEvent(
+            hardwareProtocolEncoder.encodeWoodenFishHit().map((frame) => Array.from(frame)));
+    }
     meritToast.textContent = "功德 +1";
     meritToast.title = `本轮功德 ${meritCount}`;
     woodenFishSound.textContent = speed.sound;
@@ -580,7 +617,7 @@ window.agentPet.onWindowSettings((settings) => {
     document.body.classList.toggle("is-click-through", true === settings.clickThrough);
     applyResourceSettings(settings);
     applyAnimationSettings(settings);
-    void syncHardwareMascot();
+    applyHardwareSettings(settings);
 });
 window.agentPet.onResourceUsage(applyResourceUsage);
 window.agentPet.onShowSessionDetails((open) => setSessionDetails(open, false));
@@ -673,6 +710,10 @@ document.getElementById("approval-deny").addEventListener("click", () => submitA
 hardwareButton.addEventListener("keydown", (event) => event.stopPropagation());
 hardwareButton.addEventListener("click", async (event) => {
     event.stopPropagation();
+    if (!hardwareEnabled)
+    {
+        return;
+    }
     if (hardwareClient.isConnected())
     {
         hardwareClient.disconnect();
