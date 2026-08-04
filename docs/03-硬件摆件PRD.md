@@ -9,7 +9,7 @@
 | 项目 | 内容 |
 |---|---|
 | 产品代号 | Desktop Companion Device |
-| 当前平台 | SF32BL52 黄山派开发板原型 |
+| 当前平台 | SF32LB525 黄山派开发板原型；固件构建目标 `sf32lb52-lchspi-ulp` |
 | 阶段 | 产品定义 / 原型验证 |
 | 配套端 | Windows 电脑桌宠与 Device Service |
 | 首版范围 | 单用户、单电脑、单摆件、BLE 近场连接 |
@@ -156,7 +156,7 @@ Transport: BLE features, negotiated message size, optional UART
 
 完整映射见[开发板能力评估](05-开发板能力评估.md)。
 
-## 9. SF32BL52 黄山派原型验证清单
+## 9. SF32LB525 黄山派原型验证清单
 
 以下必须以开发板原理图、SDK 示例和实测确认，当前不把猜测写成产品承诺：
 
@@ -177,7 +177,7 @@ Transport: BLE features, negotiated message size, optional UART
 
 首轮不冻结具体料号，只冻结验证功能块：
 
-- SF32BL52 黄山派开发板
+- SF32LB525 黄山派开发板
 - FPC 配套显示与交互模块（MVP 必需，型号待确认）
 - 配套扬声器（MVP 必需，型号和腔体待确认）
 - 震动执行器（MVP 必需，类型和强度待确认）
