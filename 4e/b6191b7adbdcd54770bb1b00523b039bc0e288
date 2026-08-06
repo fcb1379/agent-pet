@@ -1,0 +1,27 @@
+src/renderer/pointer-hit-policy.js
+  s_51b13a71dadfbd::t_fb573418de4813 14,16-22
+src/renderer/pointer-hit.js
+  s_51b13a71dadfbd::t_adc92252056dee 155,222-226
+src/renderer/styles.css
+  s_51b13a71dadfbd::t_2224ba05caaed1 68,652-653,995
+tests/pointer-hit-policy.test.js
+  s_51b13a71dadfbd::t_334609214d1ae8 22-39
+tests/renderer-interaction.test.js
+  s_51b13a71dadfbd::t_a35eec1e1ac416 16-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "4eb6191b7adbdcd54770bb1b00523b039bc0e288",
+  "prompts": {},
+  "sessions": {
+    "s_51b13a71dadfbd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc578-d4d4-7f33-aa8e-a8077a9fb476",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
