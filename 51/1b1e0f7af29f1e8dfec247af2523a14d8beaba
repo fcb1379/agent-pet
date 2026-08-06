@@ -1,0 +1,21 @@
+tests/ble-client.test.js
+  s_285146986cdcdb::t_af01fb3b71387a 321-349
+src/renderer/ble-client.js
+  s_285146986cdcdb::t_af01fb3b71387a 15,55-59,98-100,119-166,356,368,370-373,412,418,434,443,445-448,463,474,482,484-487,500,531-532,699,705-706
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "511b1e0f7af29f1e8dfec247af2523a14d8beaba",
+  "prompts": {},
+  "sessions": {
+    "s_285146986cdcdb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd167-97e3-7830-af9f-4e8a198f25b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
