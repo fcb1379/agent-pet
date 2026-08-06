@@ -26,6 +26,13 @@ MTU, or older firmware rejects a larger packet, a new begin packet safely
 restarts the transfer at the next size. The 20-byte fallback is byte-for-byte
 compatible with the first image protocol implementation.
 
+The firmware copies incoming image writes into a bounded worker queue before
+writing them to flash. The desktop deliberately yields between image packets so
+the worker can drain that queue. After a rejected write, it also waits for stale
+packets to drain before restarting with the next packet size; this prevents a
+fallback BEGIN packet from being interleaved with packets from the failed
+attempt.
+
 Selecting a desktop mascot generates the exact 336 x 336 JPEG used by both
 displays (maximum 128 KiB). The firmware accepts a commit only after CRC-8
 packet checks, ordered offsets, CRC-32/MPEG-2 verification, and JPEG SOI/EOI

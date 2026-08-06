@@ -4,6 +4,13 @@
 {
     const RECONNECT_DELAY_MS = 2000;
     const DEFAULT_RECONNECT_ATTEMPTS = 3;
+    const IMAGE_PACKET_DELAY_MS = 10;
+    const IMAGE_RETRY_DELAY_MS = 150;
+
+    function wait(milliseconds)
+    {
+        return new Promise((resolve) => setTimeout(resolve, milliseconds));
+    }
 
     function deviceIsUnavailable(error)
     {
@@ -35,6 +42,13 @@
             this.parseImageDigest = options.parseImageDigest;
             this.encodeTimeSync = options.encodeTimeSync;
             this.onStatus = options.onStatus || (() => {});
+            this.wait = options.wait || wait;
+            this.imagePacketDelayMs = Number.isInteger(options.imagePacketDelayMs)
+                ? Math.max(0, options.imagePacketDelayMs)
+                : IMAGE_PACKET_DELAY_MS;
+            this.imageRetryDelayMs = Number.isInteger(options.imageRetryDelayMs)
+                ? Math.max(0, options.imageRetryDelayMs)
+                : IMAGE_RETRY_DELAY_MS;
             this.enabled = false !== options.enabled;
             this.device = null;
             this.characteristic = null;
@@ -279,6 +293,10 @@
                             const percent = Math.round(((index + 1) * 100) / frames.length);
                             this.onStatus("transferring", `${percent}% · ${packetSize} B`);
                         }
+                        if (index + 1 < frames.length && 0 < this.imagePacketDelayMs)
+                        {
+                            await this.wait(this.imagePacketDelayMs);
+                        }
                     }
                     this.syncedImageRevision = image.revision;
                     this.onStatus("synced", this.device.name || "Agent Pet");
@@ -293,6 +311,10 @@
                     }
                     const nextPacketSize = dataSizes[attempt + 1] + 9;
                     this.onStatus("transferring", `MTU fallback ${nextPacketSize} B`);
+                    if (0 < this.imageRetryDelayMs)
+                    {
+                        await this.wait(this.imageRetryDelayMs);
+                    }
                 }
             }
 
@@ -441,6 +463,8 @@
         module.exports = {
             AgentPetBleClient,
             DEFAULT_RECONNECT_ATTEMPTS,
+            IMAGE_PACKET_DELAY_MS,
+            IMAGE_RETRY_DELAY_MS,
             RECONNECT_DELAY_MS,
             deviceIsUnavailable
         };

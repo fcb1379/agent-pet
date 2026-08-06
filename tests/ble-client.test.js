@@ -172,6 +172,8 @@ test("BLE client falls back to the legacy 20-byte packet when a larger MTU is re
         characteristicUuid: "status",
         imageCharacteristicUuid: "image",
         imageDataSizes: [235, 11],
+        imagePacketDelayMs: 0,
+        imageRetryDelayMs: 0,
         encodeImage: (_data, dataSize) => {
             attemptedDataSizes.push(dataSize);
             return [new Uint8Array(20), new Uint8Array(dataSize + 9), new Uint8Array(20)];
@@ -199,6 +201,47 @@ test("BLE client falls back to the legacy 20-byte packet when a larger MTU is re
     assert.deepEqual(packetLengths, [20, 244, 20, 20, 20]);
     assert.ok(statuses.some(([status, detail]) => "transferring" === status && detail.includes("fallback 20 B")));
     assert.equal(client.syncedImageRevision, "fallback");
+});
+
+test("BLE image transfer yields between packets so the firmware worker queue can drain", async () => {
+    const writes = [];
+    const waits = [];
+    let queuedPackets = 0;
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        imageDataSizes: [235],
+        imagePacketDelayMs: 10,
+        encodeImage: () => Array.from({ length: 12 }, (_value, index) =>
+            Uint8Array.from([index])),
+        encodeReset: () => [new Uint8Array(20)],
+        wait: async (milliseconds) => {
+            waits.push(milliseconds);
+            queuedPackets = Math.max(0, queuedPackets - 1);
+        }
+    });
+
+    client.device = { name: "test", gatt: { connected: true } };
+    client.characteristic = { writeValueWithResponse: async () => {} };
+    client.imageCharacteristic = {
+        writeValueWithResponse: async (packet) => {
+            queuedPackets++;
+            if (8 < queuedPackets)
+            {
+                throw new Error("Firmware image queue full");
+            }
+            writes.push(Array.from(packet));
+        }
+    };
+    client.latestImage = { revision: "paced", data: Uint8Array.from([1, 2, 3]) };
+
+    await client.flushImage();
+
+    assert.equal(writes.length, 12);
+    assert.equal(waits.length, 11);
+    assert.ok(waits.every((milliseconds) => 10 === milliseconds));
+    assert.equal(client.syncedImageRevision, "paced");
 });
 
 test("BLE client releases a stale device so the next click performs a fresh scan", async () => {
