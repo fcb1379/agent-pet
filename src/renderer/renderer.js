@@ -64,11 +64,19 @@ const hardwareClient = new window.AgentPetBleClient({
     characteristicUuid: hardwareProtocol.STATUS_RX_UUID,
     imageCharacteristicUuid: hardwareProtocol.IMAGE_RX_UUID,
     imageDigestCharacteristicUuid: hardwareProtocol.IMAGE_DIGEST_UUID,
+    meritCharacteristicUuid: hardwareProtocol.DAILY_MERIT_UUID,
     encodeImage: hardwareProtocol.encodeMascotImage,
     imageDataSizes: hardwareProtocol.IMAGE_DATA_SIZES,
     enabled: false,
     encodeReset: hardwareProtocol.encodeMascotReset,
     parseImageDigest: hardwareProtocol.parseMascotDigest,
+    encodeDailyMerit: hardwareProtocol.encodeDailyMerit,
+    parseDailyMerit: hardwareProtocol.parseDailyMerit,
+    getDailyMerit: () => {
+        const dailyMerit = readDailyMerit();
+        return { day: localDateNumber(), count: dailyMerit.count };
+    },
+    onDailyMerit: (syncedMerit) => applySyncedDailyMerit(syncedMerit),
     encodeTimeSync: () => hardwareProtocolEncoder.encodeTimeSync(),
     onStatus: (status, detail) => {
         const presentation = hardwareStatus.hardwareStatusPresentation(status, detail);
@@ -482,6 +490,11 @@ function localDateKey(date = new Date())
     return `${year}-${month}-${day}`;
 }
 
+function localDateNumber(date = new Date())
+{
+    return Number(localDateKey(date).replaceAll("-", ""));
+}
+
 function readDailyMerit()
 {
     const today = localDateKey();
@@ -509,6 +522,25 @@ function writeDailyMerit(dailyMerit)
     catch (_error)
     {
         // The click animation still works if local storage is unavailable.
+    }
+}
+
+function applySyncedDailyMerit(syncedMerit)
+{
+    if (!syncedMerit || localDateNumber() !== syncedMerit.day ||
+        !Number.isSafeInteger(syncedMerit.count) || 0 > syncedMerit.count)
+    {
+        return;
+    }
+    const previousMerit = readDailyMerit();
+    const dailyMerit = { date: localDateKey(), count: syncedMerit.count };
+
+    writeDailyMerit(dailyMerit);
+    woodenFishScene.dataset.dailyMerit = String(dailyMerit.count);
+    dailyMeritSummary.textContent = `今日功德 ${dailyMerit.count}`;
+    if (dailyMerit.count > previousMerit.count)
+    {
+        showDailyMerit(dailyMerit);
     }
 }
 

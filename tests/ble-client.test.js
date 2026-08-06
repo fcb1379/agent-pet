@@ -8,6 +8,10 @@ const {
     formatTransferDuration,
     formatTransferSpeed
 } = require("../src/renderer/ble-client");
+const {
+    encodeDailyMerit,
+    parseDailyMerit
+} = require("../src/hardware-protocol");
 
 test("BLE image transfer metrics use readable speed and duration units", () => {
     assert.equal(formatTransferSpeed(800), "800 B/s");
@@ -317,6 +321,74 @@ test("BLE image fast path bursts data commands and verifies the committed digest
         .filter(([status]) => "transferring" === status)
         .every(([_status, detail]) => !detail.startsWith("100%")));
     assert.equal(client.syncedImageRevision, "fast");
+});
+
+test("BLE client merges daily merit by keeping the larger same-day count", async () => {
+    const updates = [];
+    const writes = [];
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        meritCharacteristicUuid: "merit",
+        encodeImage: () => [],
+        encodeReset: () => [],
+        encodeDailyMerit,
+        parseDailyMerit,
+        getDailyMerit: () => ({ day: 20260806, count: 12 }),
+        onDailyMerit: (value) => updates.push(value)
+    });
+
+    client.device = { name: "test", gatt: { connected: true } };
+    client.characteristic = { writeValueWithResponse: async () => {} };
+    client.imageCharacteristic = { writeValueWithResponse: async () => {} };
+    client.meritCharacteristic = {
+        readValue: async () => new DataView(encodeDailyMerit(20260806, 27).buffer),
+        writeValueWithResponse: async (frame) => writes.push(parseDailyMerit(frame))
+    };
+
+    await client.flushMerit();
+    assert.deepEqual(updates, [{ day: 20260806, count: 27 }]);
+    assert.deepEqual(writes, []);
+
+    client.getDailyMerit = () => ({ day: 20260806, count: 31 });
+    await client.flushMerit();
+    assert.deepEqual(writes, [{ day: 20260806, count: 31 }]);
+});
+
+test("BLE merit notification immediately applies a larger device-side count", async () => {
+    const updates = [];
+    let listener = null;
+    let notificationStarts = 0;
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        meritCharacteristicUuid: "merit",
+        encodeImage: () => [],
+        encodeReset: () => [],
+        encodeDailyMerit,
+        parseDailyMerit,
+        getDailyMerit: () => ({ day: 20260806, count: 31 }),
+        onDailyMerit: (value) => updates.push(value)
+    });
+
+    client.device = { name: "test", gatt: { connected: true } };
+    client.characteristic = { writeValueWithResponse: async () => {} };
+    client.imageCharacteristic = { writeValueWithResponse: async () => {} };
+    client.meritCharacteristic = {
+        startNotifications: async () => { notificationStarts++; },
+        addEventListener: (_name, callback) => { listener = callback; },
+        removeEventListener: () => {},
+        writeValueWithResponse: async () => {}
+    };
+
+    await client.enableMeritNotifications();
+    listener({ target: { value: new DataView(encodeDailyMerit(20260806, 32).buffer) } });
+    await client.writeQueue;
+
+    assert.equal(notificationStarts, 1);
+    assert.deepEqual(updates, [{ day: 20260806, count: 32 }]);
 });
 
 test("BLE image transfer rejects a stalled progress read instead of hanging", async () => {

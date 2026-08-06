@@ -8,6 +8,9 @@ const SERVICE_UUID = "7a1e0001-6b5f-4f5c-8c9d-3e2f1a0b1000";
 const STATUS_RX_UUID = "7a1e0002-6b5f-4f5c-8c9d-3e2f1a0b1000";
 const IMAGE_RX_UUID = "7a1e0003-6b5f-4f5c-8c9d-3e2f1a0b1000";
 const IMAGE_DIGEST_UUID = "7a1e0004-6b5f-4f5c-8c9d-3e2f1a0b1000";
+const DAILY_MERIT_UUID = "7a1e0005-6b5f-4f5c-8c9d-3e2f1a0b1000";
+const DAILY_MERIT_FRAME_SIZE = 16;
+const DAILY_MERIT_MAX_COUNT = 0x7fffffff;
 const MESSAGE_TYPE_SNAPSHOT = 1;
 const MESSAGE_TYPE_WOODEN_FISH = 2;
 const MESSAGE_TYPE_TIME_SYNC = 3;
@@ -64,6 +67,61 @@ function crc32Mpeg2(data, initial = 0xffffffff)
     }
 
     return crc >>> 0;
+}
+
+function validDailyMeritDay(day)
+{
+    if (!Number.isInteger(day) || 20200101 > day || 20381231 < day)
+    {
+        return false;
+    }
+    const text = String(day);
+    const date = new Date(`${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}T00:00:00`);
+    return !Number.isNaN(date.getTime()) &&
+        date.getFullYear() === Number(text.slice(0, 4)) &&
+        date.getMonth() + 1 === Number(text.slice(4, 6)) &&
+        date.getDate() === Number(text.slice(6, 8));
+}
+
+function encodeDailyMerit(day, count)
+{
+    if (!validDailyMeritDay(day) || !Number.isInteger(count) ||
+        0 > count || DAILY_MERIT_MAX_COUNT < count)
+    {
+        throw new Error("Invalid daily merit value");
+    }
+    const frame = new Uint8Array(DAILY_MERIT_FRAME_SIZE);
+    const view = new DataView(frame.buffer);
+
+    frame[0] = 0x41;
+    frame[1] = 0x4d;
+    frame[2] = 1;
+    frame[3] = 1;
+    view.setUint32(4, day, true);
+    view.setUint32(8, count, true);
+    frame[15] = crc8Atm(frame.subarray(0, 15));
+    return frame;
+}
+
+function parseDailyMerit(value)
+{
+    const bytes = value instanceof DataView
+        ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+        : Uint8Array.from(value || []);
+    if (DAILY_MERIT_FRAME_SIZE !== bytes.length || 0x41 !== bytes[0] ||
+        0x4d !== bytes[1] || 1 !== bytes[2] ||
+        bytes[15] !== crc8Atm(bytes.subarray(0, 15)))
+    {
+        throw new Error("Invalid daily merit response");
+    }
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const day = view.getUint32(4, true);
+    const count = view.getUint32(8, true);
+    if (!validDailyMeritDay(day) || DAILY_MERIT_MAX_COUNT < count)
+    {
+        throw new Error("Invalid daily merit value");
+    }
+    return { day, count };
 }
 
 function setUint24(view, offset, value)
@@ -400,6 +458,8 @@ const HARDWARE_PROTOCOL_API = Object.freeze({
     IMAGE_FORMAT_JPEG,
     IMAGE_FORMAT_GIF,
     IMAGE_DIGEST_UUID,
+    DAILY_MERIT_UUID,
+    DAILY_MERIT_FRAME_SIZE,
     IMAGE_RX_UUID,
     MAX_SESSION_COUNT,
     MAX_MASCOT_IMAGE_BYTES,
@@ -414,9 +474,11 @@ const HARDWARE_PROTOCOL_API = Object.freeze({
     ageSeconds,
     crc8Atm,
     crc32Mpeg2,
+    encodeDailyMerit,
     encodeMascotImage,
     encodeMascotReset,
     parseMascotDigest,
+    parseDailyMerit,
     encodePayload,
     encodeSnapshot,
     encodeTimeSync,

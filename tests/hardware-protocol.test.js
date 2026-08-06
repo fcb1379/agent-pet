@@ -6,9 +6,11 @@ const {
     HardwareProtocolEncoder,
     crc8Atm,
     crc32Mpeg2,
+    encodeDailyMerit,
     encodeMascotImage,
     encodeMascotReset,
     parseMascotDigest,
+    parseDailyMerit,
     encodeSnapshot,
     encodeTimeSync,
     encodeWoodenFishEvent,
@@ -21,6 +23,19 @@ test("CRC-8/ATM matches the standard check vector", () => {
 
 test("CRC-32/MPEG-2 matches the standard check vector", () => {
     assert.equal(crc32Mpeg2(Buffer.from("123456789", "ascii")), 0x0376e6e7);
+});
+
+test("daily merit frame round-trips a date and count with CRC protection", () => {
+    const frame = encodeDailyMerit(20260806, 128);
+
+    assert.equal(frame.length, 16);
+    assert.equal(frame[15], crc8Atm(frame.subarray(0, 15)));
+    assert.deepEqual(parseDailyMerit(new DataView(frame.buffer)), {
+        day: 20260806,
+        count: 128
+    });
+    frame[8] ^= 1;
+    assert.throws(() => parseDailyMerit(frame), /Invalid daily merit response/);
 });
 
 test("mascot JPEG uses negotiated-size packets with ordered offsets and per-packet CRC", () => {

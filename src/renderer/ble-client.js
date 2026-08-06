@@ -65,6 +65,7 @@
             this.characteristicUuid = options.characteristicUuid;
             this.imageCharacteristicUuid = options.imageCharacteristicUuid;
             this.imageDigestCharacteristicUuid = options.imageDigestCharacteristicUuid;
+            this.meritCharacteristicUuid = options.meritCharacteristicUuid;
             this.bluetooth = options.bluetooth
                 || (globalObject.navigator && globalObject.navigator.bluetooth);
             this.encodeImage = options.encodeImage;
@@ -74,6 +75,10 @@
             this.encodeReset = options.encodeReset;
             this.parseImageDigest = options.parseImageDigest;
             this.encodeTimeSync = options.encodeTimeSync;
+            this.encodeDailyMerit = options.encodeDailyMerit;
+            this.parseDailyMerit = options.parseDailyMerit;
+            this.getDailyMerit = options.getDailyMerit || (() => null);
+            this.onDailyMerit = options.onDailyMerit || (() => {});
             this.onStatus = options.onStatus || (() => {});
             this.wait = options.wait || wait;
             this.now = "function" === typeof options.now ? options.now : () => Date.now();
@@ -103,6 +108,7 @@
             this.characteristic = null;
             this.imageCharacteristic = null;
             this.imageDigestCharacteristic = null;
+            this.meritCharacteristic = null;
             this.latestFrames = [];
             this.latestImage = { revision: "default", data: null };
             this.syncedImageRevision = null;
@@ -114,6 +120,7 @@
                 : DEFAULT_RECONNECT_ATTEMPTS;
             this.manualDisconnect = false;
             this.handleDisconnected = this.handleDisconnected.bind(this);
+            this.handleMeritNotification = this.handleMeritNotification.bind(this);
         }
 
         async runImageGattOperation(operation, description)
@@ -252,10 +259,12 @@
 
         releaseDevice()
         {
+            this.detachMeritNotifications();
             this.setDevice(null);
             this.characteristic = null;
             this.imageCharacteristic = null;
             this.imageDigestCharacteristic = null;
+            this.meritCharacteristic = null;
             this.syncedImageRevision = null;
             this.writeQueue = Promise.resolve();
         }
@@ -280,6 +289,7 @@
             this.characteristic = await service.getCharacteristic(this.characteristicUuid);
             this.imageCharacteristic = await service.getCharacteristic(this.imageCharacteristicUuid);
             this.imageDigestCharacteristic = null;
+            this.meritCharacteristic = null;
             if (this.imageDigestCharacteristicUuid)
             {
                 try
@@ -291,14 +301,27 @@
                     this.imageDigestCharacteristic = null;
                 }
             }
+            if (this.meritCharacteristicUuid)
+            {
+                try
+                {
+                    this.meritCharacteristic = await service.getCharacteristic(this.meritCharacteristicUuid);
+                }
+                catch (_error)
+                {
+                    this.meritCharacteristic = null;
+                }
+            }
             this.reconnectAttempts = 0;
             this.syncedImageRevision = null;
             this.onStatus("connected", this.device.name || "Agent Pet");
             this.writeQueue = Promise.resolve()
                 .then(() => this.flushTime())
+                .then(() => this.flushMerit())
                 .then(() => this.flushLatest())
                 .then(() => this.flushImage());
             await this.writeQueue;
+            await this.enableMeritNotifications();
             return true;
         }
 
@@ -601,9 +624,83 @@
                 await this.characteristic.writeValueWithResponse(frame);
             }
         }
+
+        async flushMerit()
+        {
+            if (!this.isConnected() || !this.meritCharacteristic ||
+                "function" !== typeof this.encodeDailyMerit ||
+                "function" !== typeof this.parseDailyMerit)
+            {
+                return;
+            }
+            const remoteValue = await this.meritCharacteristic.readValue();
+            const remote = this.parseDailyMerit(remoteValue);
+            await this.mergeMerit(remote);
+        }
+
+        async mergeMerit(remote)
+        {
+            const local = this.getDailyMerit();
+            if (!local || !Number.isInteger(local.day) || !Number.isInteger(local.count) ||
+                !remote || !Number.isInteger(remote.day) || !Number.isInteger(remote.count))
+            {
+                return;
+            }
+            const merged = remote.day === local.day
+                ? { day: local.day, count: Math.max(local.count, remote.count) }
+                : { day: local.day, count: local.count };
+
+            if (merged.day !== local.day || merged.count !== local.count)
+            {
+                this.onDailyMerit(merged);
+            }
+            if (merged.day !== remote.day || merged.count !== remote.count)
+            {
+                await this.meritCharacteristic.writeValueWithResponse(
+                    this.encodeDailyMerit(merged.day, merged.count));
+            }
+        }
+
+        async enableMeritNotifications()
+        {
+            if (!this.meritCharacteristic ||
+                "function" !== typeof this.meritCharacteristic.startNotifications ||
+                "function" !== typeof this.meritCharacteristic.addEventListener)
+            {
+                return;
+            }
+            await this.meritCharacteristic.startNotifications();
+            this.meritCharacteristic.addEventListener(
+                "characteristicvaluechanged",
+                this.handleMeritNotification);
+        }
+
+        detachMeritNotifications()
+        {
+            if (this.meritCharacteristic &&
+                "function" === typeof this.meritCharacteristic.removeEventListener)
+            {
+                this.meritCharacteristic.removeEventListener(
+                    "characteristicvaluechanged",
+                    this.handleMeritNotification);
+            }
+        }
+
+        handleMeritNotification(event)
+        {
+            if (!event || !event.target || !event.target.value)
+            {
+                return;
+            }
+            this.writeQueue = this.writeQueue
+                .then(() => this.mergeMerit(this.parseDailyMerit(event.target.value)))
+                .catch((error) => this.onStatus("error", error.message));
+        }
+
         disconnect(silent = false)
         {
             this.manualDisconnect = true;
+            this.detachMeritNotifications();
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
             if (this.device && this.device.gatt && this.device.gatt.connected)
@@ -613,6 +710,7 @@
             this.characteristic = null;
             this.imageCharacteristic = null;
             this.imageDigestCharacteristic = null;
+            this.meritCharacteristic = null;
             this.syncedImageRevision = null;
             this.writeQueue = Promise.resolve();
             if (!silent)
@@ -666,9 +764,11 @@
 
         handleDisconnected()
         {
+            this.detachMeritNotifications();
             this.characteristic = null;
             this.imageCharacteristic = null;
             this.imageDigestCharacteristic = null;
+            this.meritCharacteristic = null;
             this.syncedImageRevision = null;
             this.writeQueue = Promise.resolve();
             if (!this.enabled)
