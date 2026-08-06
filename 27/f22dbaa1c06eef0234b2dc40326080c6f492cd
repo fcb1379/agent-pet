@@ -1,0 +1,27 @@
+src/renderer/ble-client.js
+  s_66f621550653f0::t_73e79613199ba5 7-13,45-51,296-299,314-317,466-467
+package.json
+  s_66f621550653f0::t_d71d67e9f3a8d2 3
+tests/ble-client.test.js
+  s_66f621550653f0::t_73e79613199ba5 175-176,206-246
+docs/ble-hardware-sync.md
+  s_66f621550653f0::t_73e79613199ba5 29-35
+package-lock.json
+  s_66f621550653f0::t_f7fa389e7ed167 3,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "27f22dbaa1c06eef0234b2dc40326080c6f492cd",
+  "prompts": {},
+  "sessions": {
+    "s_66f621550653f0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd4f4-39de-7f41-a6bc-4458d1d27f68",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
