@@ -1,0 +1,23 @@
+src/main.js
+  s_51b13a71dadfbd::t_1cf95354c1c4f9 457-460,476-479
+src/state-store.js
+  s_51b13a71dadfbd::t_200a9e1d28ed00 21,26-35,54,56-70,105,142,152-161
+tests/state-store.test.js
+  s_51b13a71dadfbd::t_6c9fa147828769 106-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "eea3741ff019926f7f1d6b9bcc4a500c0397adee",
+  "prompts": {},
+  "sessions": {
+    "s_51b13a71dadfbd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc578-d4d4-7f33-aa8e-a8077a9fb476",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "qinmenghuai <qinmenghuai@wondertechlabs.com>"
+    }
+  }
+}
