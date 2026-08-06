@@ -1,0 +1,83 @@
+tests/hardware-image.test.js
+  s_285146986cdcdb::t_958024d43e2878 12,78,80-82,85-98
+  s_285146986cdcdb::t_dec752c414072b 55
+  s_285146986cdcdb::t_de337f5de5f0f8 131
+  s_285146986cdcdb::t_1b8c23efaebf01 99-130,132,134
+  s_285146986cdcdb::t_45e8502a4fe4bf 13,83-84,133
+  s_285146986cdcdb::t_a0e202d087ea5d 20
+src/renderer/hardware-status.js
+  s_285146986cdcdb::t_9a5f304d80ff82 22-27,32,34-36,45,48
+  s_285146986cdcdb::t_be59641d6df8db 33,37
+src/custom-assets.js
+  s_285146986cdcdb::t_cf100eba98bbb2 45-68,84-85,87,99
+  s_285146986cdcdb::t_b4e5536a0392c2 44
+src/main.js
+  s_285146986cdcdb::t_f1f717e25726ed 160-163
+src/hardware-protocol.js
+  s_285146986cdcdb::t_0b7b0287f68b86 6,22,110,113-114,125,152,401
+  s_285146986cdcdb::t_e6a4c56c661469 163-166,175-187
+  s_285146986cdcdb::t_f1f717e25726ed 111-112
+tests/hardware-protocol.test.js
+  s_285146986cdcdb::t_958024d43e2878 35,51-61
+  s_285146986cdcdb::t_a3ac83cbd86b96 82-99
+package.json
+  s_285146986cdcdb::t_a31ff724aadf43 3
+tests/hardware-status.test.js
+  s_285146986cdcdb::t_be59641d6df8db 44-47
+  s_285146986cdcdb::t_7a5eab37bb059b 7-8,32-43
+  s_66f621550653f0::t_26aa4dba28a64a 48
+tests/desktop-features.test.js
+  s_285146986cdcdb::t_ad0add2005c670 271-291
+  s_285146986cdcdb::t_ae5250345a0ae6 292-294
+src/renderer/ble-client.js
+  s_285146986cdcdb::t_24b703223702ca 339-340,351-353,357,359,396-398,407,416,418,420,626
+  s_285146986cdcdb::t_319c19f0e5c8ea 9-14,21-41,73,80-91,294,300,327-338,341-345,349,354-356,358,360-395,399-403,405-406,408-415,417,419,422,424-447,451-456,467-472,627-628,630,632-633
+tests/ble-client.test.js
+  s_285146986cdcdb::t_a3ac83cbd86b96 5-17,259-270,273-278,280-307,310,312-320
+  s_285146986cdcdb::t_9f4d3c26680b1f 271-272,279,308-309,311
+src/hardware-image.js
+  s_285146986cdcdb::t_6e361e5efb5709 21-22
+  s_285146986cdcdb::t_429464867bbdb7 183,192,194-223,229-231,235-260,262-273,275-287
+  s_285146986cdcdb::t_45e8502a4fe4bf 15,19,534
+  s_285146986cdcdb::t_6a80386e86cbd8 9-11,14,18,20,175,185-191,288-297,299-300,305-309,315,332-334,383-387,389-391,400-407,419,426-429,439-440,447-451,528,533,535
+  s_285146986cdcdb::t_769c32671c71d7 298,301-304,317-331,335-336,339-350,356-357,366-377,446
+  s_285146986cdcdb::t_5b70944a24cb57 182
+  s_285146986cdcdb::t_72c93eb6a44eac 224-228,232-234,261,274,351-355,358-365
+  s_285146986cdcdb::t_38fbbd847974ef 442-445
+  s_285146986cdcdb::t_de337f5de5f0f8 16-17,310-314,316,338,430-438,441
+  s_285146986cdcdb::t_a0e202d087ea5d 7-8
+  s_66f621550653f0::t_8c97bf0baba5d7 184,193,337
+src/renderer/styles.css
+  s_285146986cdcdb::t_9a5f304d80ff82 1373,1380
+docs/ble-hardware-sync.md
+  s_285146986cdcdb::t_4d97db30ac8ece 37-39
+  s_285146986cdcdb::t_843a9aac4ec2a0 22,36,42-47
+  s_285146986cdcdb::t_4b12ebc958c19f 40-41
+  s_285146986cdcdb::t_5b70944a24cb57 5-6
+package-lock.json
+  s_285146986cdcdb::t_d7a403acffa386 3,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "ea79f299ce45c9969de4347ab3e8f3393061f2e5",
+  "prompts": {},
+  "sessions": {
+    "s_285146986cdcdb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd167-97e3-7830-af9f-4e8a198f25b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    },
+    "s_66f621550653f0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd4f4-39de-7f41-a6bc-4458d1d27f68",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
