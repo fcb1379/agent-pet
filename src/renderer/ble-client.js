@@ -6,10 +6,37 @@
     const DEFAULT_RECONNECT_ATTEMPTS = 3;
     const IMAGE_PACKET_DELAY_MS = 10;
     const IMAGE_RETRY_DELAY_MS = 150;
+    const IMAGE_FAST_BURST_PACKETS = 16;
+    const IMAGE_FLOW_ACK_ATTEMPTS = 100;
+    const IMAGE_FLOW_ACK_DELAY_MS = 20;
+    const IMAGE_COMMIT_VERIFY_ATTEMPTS = 5;
+    const IMAGE_COMMIT_VERIFY_DELAY_MS = 400;
+    const IMAGE_SPEED_WARMUP_MS = 500;
 
     function wait(milliseconds)
     {
         return new Promise((resolve) => setTimeout(resolve, milliseconds));
+    }
+
+    function formatTransferSpeed(bytesPerSecond)
+    {
+        const speed = Math.max(0, Number(bytesPerSecond) || 0);
+        if (1024 * 1024 <= speed)
+        {
+            return `${(speed / (1024 * 1024)).toFixed(1)} MB/s`;
+        }
+        if (1024 <= speed)
+        {
+            const kilobytesPerSecond = speed / 1024;
+            return `${kilobytesPerSecond.toFixed(100 <= kilobytesPerSecond ? 0 : 1)} KB/s`;
+        }
+        return `${Math.round(speed)} B/s`;
+    }
+
+    function formatTransferDuration(milliseconds)
+    {
+        const seconds = Math.max(0, Number(milliseconds) || 0) / 1000;
+        return `${seconds.toFixed(1)} s`;
     }
 
     function deviceIsUnavailable(error)
@@ -43,12 +70,25 @@
             this.encodeTimeSync = options.encodeTimeSync;
             this.onStatus = options.onStatus || (() => {});
             this.wait = options.wait || wait;
+            this.now = "function" === typeof options.now ? options.now : () => Date.now();
             this.imagePacketDelayMs = Number.isInteger(options.imagePacketDelayMs)
                 ? Math.max(0, options.imagePacketDelayMs)
                 : IMAGE_PACKET_DELAY_MS;
             this.imageRetryDelayMs = Number.isInteger(options.imageRetryDelayMs)
                 ? Math.max(0, options.imageRetryDelayMs)
                 : IMAGE_RETRY_DELAY_MS;
+            this.imageFastBurstPackets = Number.isInteger(options.imageFastBurstPackets)
+                ? Math.max(1, options.imageFastBurstPackets)
+                : IMAGE_FAST_BURST_PACKETS;
+            this.imageFlowAckAttempts = Number.isInteger(options.imageFlowAckAttempts)
+                ? Math.max(1, options.imageFlowAckAttempts)
+                : IMAGE_FLOW_ACK_ATTEMPTS;
+            this.imageFlowAckDelayMs = Number.isInteger(options.imageFlowAckDelayMs)
+                ? Math.max(0, options.imageFlowAckDelayMs)
+                : IMAGE_FLOW_ACK_DELAY_MS;
+            this.imageSpeedWarmupMs = Number.isInteger(options.imageSpeedWarmupMs)
+                ? Math.max(0, options.imageSpeedWarmupMs)
+                : IMAGE_SPEED_WARMUP_MS;
             this.enabled = false !== options.enabled;
             this.device = null;
             this.characteristic = null;
@@ -251,11 +291,13 @@
             }
 
             const image = this.latestImage;
+            let supportsFlowControl = false;
             if (this.imageDigestCharacteristic && "function" === typeof this.parseImageDigest)
             {
                 try
                 {
                     const digest = this.parseImageDigest(await this.imageDigestCharacteristic.readValue());
+                    supportsFlowControl = Number.isInteger(digest.received);
                     const sameImage = image.data
                         ? Boolean(image.md5 && digest.available && image.md5 === digest.md5)
                         : !digest.available;
@@ -282,24 +324,136 @@
                     : this.encodeReset();
                 const progressStep = Math.max(1, Math.floor(frames.length / 20));
                 const packetSize = image.data ? dataSize + 9 : frames[0].length;
+                const transferStartedAt = this.now();
+                const imageByteLength = image.data ? image.data.byteLength : 0;
+                const transferDetail = (dataFrameCount, percent, mode = "") => {
+                    const bytesSent = Math.min(imageByteLength, dataFrameCount * dataSize);
+                    const elapsedMs = Math.max(0, this.now() - transferStartedAt);
+                    if (this.imageSpeedWarmupMs > elapsedMs)
+                    {
+                        return `${percent}% · 测速中${mode ? ` · ${mode}` : ""}`;
+                    }
+                    const speed = formatTransferSpeed((bytesSent * 1000) / Math.max(1, elapsedMs));
+                    return `${percent}% · ${speed}${mode ? ` · ${mode}` : ""}`;
+                };
+                const useFastWrite = Boolean(
+                    image.data &&
+                    supportsFlowControl &&
+                    this.imageDigestCharacteristic &&
+                    "function" === typeof this.parseImageDigest &&
+                    "function" === typeof this.imageCharacteristic.writeValueWithoutResponse
+                );
 
                 try
                 {
-                    for (let index = 0; index < frames.length; index++)
+                    if (useFastWrite)
                     {
-                        await this.imageCharacteristic.writeValueWithResponse(frames[index]);
-                        if (0 === index % progressStep || index + 1 === frames.length)
+                        await this.imageCharacteristic.writeValueWithResponse(frames[0]);
+                        for (let index = 1; index < frames.length - 1; index++)
                         {
-                            const percent = Math.round(((index + 1) * 100) / frames.length);
-                            this.onStatus("transferring", `${percent}% · ${packetSize} B`);
+                            const isLastDataFrame = index + 2 === frames.length;
+                            const isFlowControlBoundary =
+                                0 === index % this.imageFastBurstPackets || isLastDataFrame;
+                            await this.imageCharacteristic.writeValueWithoutResponse(frames[index]);
+                            if (isFlowControlBoundary)
+                            {
+                                const requiredBytes = Math.min(imageByteLength, index * dataSize);
+                                let acknowledged = false;
+                                for (let ackAttempt = 0;
+                                    ackAttempt < this.imageFlowAckAttempts;
+                                    ackAttempt++)
+                                {
+                                    if (0 < this.imageFlowAckDelayMs)
+                                    {
+                                        await this.wait(this.imageFlowAckDelayMs);
+                                    }
+                                    try
+                                    {
+                                        const digest = this.parseImageDigest(
+                                            await this.imageDigestCharacteristic.readValue()
+                                        );
+                                        if (Number.isInteger(digest.received) &&
+                                            requiredBytes <= digest.received)
+                                        {
+                                            acknowledged = true;
+                                            break;
+                                        }
+                                    }
+                                    catch (_error)
+                                    {
+                                        /* A busy firmware worker is polled again without blocking the UI. */
+                                    }
+                                }
+                                if (!acknowledged)
+                                {
+                                    throw new Error(`Device stopped at ${requiredBytes} image bytes`);
+                                }
+                                const percent = Math.min(
+                                    99,
+                                    Math.round((requiredBytes * 100) / imageByteLength)
+                                );
+                                this.onStatus("transferring", transferDetail(index, percent, "flow"));
+                            }
                         }
-                        if (index + 1 < frames.length && 0 < this.imagePacketDelayMs)
+                        await this.imageCharacteristic.writeValueWithResponse(frames.at(-1));
+
+                        let committed = false;
+                        for (let verifyAttempt = 0;
+                            verifyAttempt < IMAGE_COMMIT_VERIFY_ATTEMPTS;
+                            verifyAttempt++)
                         {
-                            await this.wait(this.imagePacketDelayMs);
+                            await this.wait(IMAGE_COMMIT_VERIFY_DELAY_MS);
+                            try
+                            {
+                                const digest = this.parseImageDigest(
+                                    await this.imageDigestCharacteristic.readValue()
+                                );
+                                if (image.md5 && digest.available && image.md5 === digest.md5)
+                                {
+                                    committed = true;
+                                    break;
+                                }
+                            }
+                            catch (_error)
+                            {
+                                /* Commit validation can briefly own the firmware image mutex. */
+                            }
+                        }
+                        if (!committed)
+                        {
+                            throw new Error("Fast image transfer was not committed");
+                        }
+                    }
+                    else
+                    {
+                        for (let index = 0; index < frames.length; index++)
+                        {
+                            await this.imageCharacteristic.writeValueWithResponse(frames[index]);
+                            if (0 === index % progressStep || index + 1 === frames.length)
+                            {
+                                const dataFrameCount = Math.max(0, Math.min(index, frames.length - 2));
+                                const bytesSent = Math.min(imageByteLength, dataFrameCount * dataSize);
+                                const percent = 0 < imageByteLength
+                                    ? Math.round((bytesSent * 100) / imageByteLength)
+                                    : Math.round(((index + 1) * 100) / frames.length);
+                                const detail = 0 < dataFrameCount
+                                    ? transferDetail(dataFrameCount, percent)
+                                    : `${percent}% · ${packetSize} B`;
+                                this.onStatus("transferring", detail);
+                            }
+                            if (index + 1 < frames.length && 0 < this.imagePacketDelayMs)
+                            {
+                                await this.wait(this.imagePacketDelayMs);
+                            }
                         }
                     }
                     this.syncedImageRevision = image.revision;
-                    this.onStatus("synced", this.device.name || "Agent Pet");
+                    const elapsedMs = Math.max(1, this.now() - transferStartedAt);
+                    const averageSpeed = formatTransferSpeed((imageByteLength * 1000) / elapsedMs);
+                    this.onStatus(
+                        "synced",
+                        `${this.device.name || "Agent Pet"} · ${formatTransferDuration(elapsedMs)} · ${averageSpeed}`
+                    );
                     return;
                 }
                 catch (error)
@@ -310,7 +464,12 @@
                         throw error;
                     }
                     const nextPacketSize = dataSizes[attempt + 1] + 9;
-                    this.onStatus("transferring", `MTU fallback ${nextPacketSize} B`);
+                    this.onStatus(
+                        "transferring",
+                        useFastWrite
+                            ? `0% · 安全重试 ${nextPacketSize} B`
+                            : `MTU fallback ${nextPacketSize} B`
+                    );
                     if (0 < this.imageRetryDelayMs)
                     {
                         await this.wait(this.imageRetryDelayMs);
@@ -464,8 +623,14 @@
             AgentPetBleClient,
             DEFAULT_RECONNECT_ATTEMPTS,
             IMAGE_PACKET_DELAY_MS,
+            IMAGE_FAST_BURST_PACKETS,
+            IMAGE_FLOW_ACK_ATTEMPTS,
+            IMAGE_FLOW_ACK_DELAY_MS,
             IMAGE_RETRY_DELAY_MS,
+            IMAGE_SPEED_WARMUP_MS,
             RECONNECT_DELAY_MS,
+            formatTransferDuration,
+            formatTransferSpeed,
             deviceIsUnavailable
         };
     }

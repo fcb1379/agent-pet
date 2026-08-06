@@ -2,8 +2,8 @@
 
 The desktop app acts as the BLE Central and the SF32 Agent Pet acts as the
 Peripheral. The link transports bounded status frames and the user-selected
-mascot JPEG. Task text, working directories, commands, file names, approval
-contents, and user prompts are never sent.
+mascot JPEG or GIF asset. Task text, working directories, commands, file names,
+approval contents, and user prompts are never sent.
 
 ## GATT contract
 
@@ -19,7 +19,7 @@ The desktop sends a new complete snapshot after connecting, reconnecting, or
 observing a state change.
 
 Image begin, commit, and reset control packets remain 20 bytes. Image data
-packets are variable length: an 8-byte header, 1-235 bytes of JPEG data, and a
+packets are variable length: an 8-byte header, 1-235 bytes of image data, and a
 trailing CRC-8 byte (9-244 bytes total). The desktop tries packet sizes of 244,
 185, 129, 73, and 20 bytes in order. If the central platform, negotiated ATT
 MTU, or older firmware rejects a larger packet, a new begin packet safely
@@ -33,12 +33,18 @@ packets to drain before restarting with the next packet size; this prevents a
 fallback BEGIN packet from being interleaved with packets from the failed
 attempt.
 
-Selecting a desktop mascot generates the exact 336 x 336 JPEG used by both
-displays (maximum 128 KiB). The firmware accepts a commit only after CRC-8
-packet checks, ordered offsets, CRC-32/MPEG-2 verification, and JPEG SOI/EOI
-validation. It writes through a bounded static worker queue to `/pet.tmp`, then
-atomically replaces `/pet.jpg` with backup recovery. Disconnects discard only
-the temporary file; normal power cycles restore `/pet.jpg`. Restoring the
+Selecting a still desktop mascot generates a 336 x 336 baseline JPEG (maximum
+128 KiB). Selecting an animated GIF keeps the original file for desktop display
+and generates a separate hardware-only GIF89a asset. The conversion automatically
+reduces the palette, canvas size, or sampled frame count as needed while
+preserving total playback time (maximum 512 KiB and 120 output frames). The
+firmware accepts
+a commit only after CRC-8 packet checks, ordered offsets, CRC-32/MPEG-2
+verification, and format-specific structure validation. It writes through a
+bounded static worker queue to `/pet.tmp`, then atomically replaces `/pet.img`
+with backup recovery. Existing `/pet.jpg` files are migrated on startup.
+Disconnects discard only the temporary file; normal power cycles restore the
+committed image. Restoring the
 desktop default sends a reset frame and returns the device to the built-in
 mascot.
 The aggregate state drives the hardware pet presentation:

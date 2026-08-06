@@ -41,6 +41,31 @@ function versionedImageFileUrl(filePath)
     url.searchParams.set("v", `${stat.size}-${stat.mtimeMs}`);
     return url.href;
 }
+
+function imageFileDigest(filePath)
+{
+    return crypto.createHash("sha256")
+        .update(fs.readFileSync(filePath))
+        .digest("hex");
+}
+
+function copyImageAsset(sourcePath, targetPath, sourceDigest)
+{
+    if (fs.existsSync(targetPath))
+    {
+        const targetStat = fs.statSync(targetPath);
+        const sourceStat = fs.statSync(sourcePath);
+        if (targetStat.isFile() && targetStat.size === sourceStat.size &&
+            sourceDigest === imageFileDigest(targetPath))
+        {
+            return;
+        }
+        throw new Error("图片缓存文件名冲突，请重新选择图片");
+    }
+
+    fs.copyFileSync(sourcePath, targetPath, fs.constants.COPYFILE_EXCL);
+}
+
 function importImageFiles(filePaths, assetDirectory, group)
 {
     const files = [...new Set(filePaths.map((value) => path.resolve(value)))];
@@ -56,13 +81,10 @@ function importImageFiles(filePaths, assetDirectory, group)
     return files.sort((left, right) => left.localeCompare(right, "zh-CN", { numeric: true }))
         .map((sourcePath, index) => {
             const { extension } = validateImageFile(sourcePath);
-            const digest = crypto.createHash("sha256")
-                .update(sourcePath)
-                .update(String(fs.statSync(sourcePath).mtimeMs))
-                .digest("hex")
-                .slice(0, 12);
+            const sourceDigest = imageFileDigest(sourcePath);
+            const digest = sourceDigest.slice(0, 12);
             const targetPath = path.join(targetDirectory, `${group}-${String(index).padStart(2, "0")}-${digest}${extension}`);
-            fs.copyFileSync(sourcePath, targetPath);
+            copyImageAsset(sourcePath, targetPath, sourceDigest);
             return targetPath;
         });
 }

@@ -2,7 +2,19 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { AgentPetBleClient, deviceIsUnavailable } = require("../src/renderer/ble-client");
+const {
+    AgentPetBleClient,
+    deviceIsUnavailable,
+    formatTransferDuration,
+    formatTransferSpeed
+} = require("../src/renderer/ble-client");
+
+test("BLE image transfer metrics use readable speed and duration units", () => {
+    assert.equal(formatTransferSpeed(800), "800 B/s");
+    assert.equal(formatTransferSpeed(96.4 * 1024), "96.4 KB/s");
+    assert.equal(formatTransferSpeed(1.25 * 1024 * 1024), "1.3 MB/s");
+    assert.equal(formatTransferDuration(5230), "5.2 s");
+});
 
 test("disabled BLE client stays silent until hardware integration is enabled", async () => {
     let scanCount = 0;
@@ -242,6 +254,68 @@ test("BLE image transfer yields between packets so the firmware worker queue can
     assert.equal(waits.length, 11);
     assert.ok(waits.every((milliseconds) => 10 === milliseconds));
     assert.equal(client.syncedImageRevision, "paced");
+});
+
+test("BLE image fast path bursts data commands and verifies the committed digest", async () => {
+    const responseWrites = [];
+    const commandWrites = [];
+    const waits = [];
+    const statuses = [];
+    let digestReads = 0;
+    const expectedMd5 = "d41d8cd98f00b204e9800998ecf8427e";
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        imageDigestCharacteristicUuid: "digest",
+        imageDataSizes: [235],
+        imageFastBurstPackets: 4,
+        imageFlowAckAttempts: 2,
+        imageFlowAckDelayMs: 3,
+        now: () => 0,
+        encodeImage: () => Array.from({ length: 15 }, (_value, index) =>
+            Uint8Array.from([index])),
+        encodeReset: () => [new Uint8Array(20)],
+        parseImageDigest: () => ({
+            available: 6 <= digestReads,
+            md5: 6 <= digestReads ? expectedMd5 : null,
+            received: 1 < digestReads ? 3 : 0
+        }),
+        wait: async (milliseconds) => waits.push(milliseconds),
+        onStatus: (status, detail) => statuses.push([status, detail])
+    });
+
+    client.device = { name: "test", gatt: { connected: true } };
+    client.characteristic = { writeValueWithResponse: async () => {} };
+    client.imageCharacteristic = {
+        writeValueWithResponse: async (frame) => responseWrites.push(frame[0]),
+        writeValueWithoutResponse: async (frame) => commandWrites.push(frame[0])
+    };
+    client.imageDigestCharacteristic = {
+        readValue: async () => {
+            digestReads++;
+            return new DataView(new ArrayBuffer(20));
+        }
+    };
+    client.latestImage = {
+        revision: "fast",
+        md5: expectedMd5,
+        data: Uint8Array.from([1, 2, 3])
+    };
+
+    await client.flushImage();
+
+    assert.deepEqual(responseWrites, [0, 14]);
+    assert.deepEqual(commandWrites, Array.from({ length: 13 }, (_value, index) => index + 1));
+    assert.equal(waits.filter((milliseconds) => 3 === milliseconds).length, 4);
+    assert.ok(waits.includes(400));
+    assert.equal(digestReads, 6);
+    assert.ok(statuses.some(([status, detail]) =>
+        "transferring" === status && detail.includes("测速中")));
+    assert.ok(statuses
+        .filter(([status]) => "transferring" === status)
+        .every(([_status, detail]) => !detail.startsWith("100%")));
+    assert.equal(client.syncedImageRevision, "fast");
 });
 
 test("BLE client releases a stale device so the next click performs a fresh scan", async () => {

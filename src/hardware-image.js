@@ -4,10 +4,22 @@ const fs = require("node:fs");
 const path = require("node:path");
 const sharp = require("sharp");
 
-const HARDWARE_MASCOT_SIZE = 336;
-const HARDWARE_MASCOT_MAX_BYTES = 128 * 1024;
+const HARDWARE_MASCOT_SIZE = 192;
+const HARDWARE_MASCOT_GIF_SIZE = HARDWARE_MASCOT_SIZE;
+const HARDWARE_MASCOT_JPEG_MAX_BYTES = 128 * 1024;
+const HARDWARE_MASCOT_GIF_MAX_BYTES = 512 * 1024;
+const HARDWARE_MASCOT_MAX_BYTES = HARDWARE_MASCOT_GIF_MAX_BYTES;
 const HARDWARE_MASCOT_BACKGROUND = Object.freeze({ r: 16, g: 35, b: 43, alpha: 1 });
 const JPEG_QUALITIES = Object.freeze([88, 82, 76, 70, 64, 58, 52, 46]);
+const GIF_COLOUR_COUNTS = Object.freeze([256, 192, 128, 96, 64, 48, 32]);
+const GIF_CANVAS_SIZES = Object.freeze([HARDWARE_MASCOT_GIF_SIZE, 160, 128]);
+const GIF_FRAME_TARGETS = Object.freeze([60, 45, 30, 24, 18, 12, 8, 4, 2]);
+const GIF_MAX_FRAMES = 60;
+const GIF_MIN_DELAY_MS = 20;
+const GIF_TARGET_MIN_DELAY_MS = 125;
+const GIF_MAX_DELAY_MS = 1000;
+const GIF_MAX_AGGREGATED_DELAY_MS = 600000;
+const GIF_SOURCE_PIXEL_LIMIT = 256 * 1024 * 1024;
 const MAX_SOURCE_PIXEL_DIFFERENCE = 4;
 const JPEG_SOI = Buffer.from([0xff, 0xd8]);
 const JFIF_APP0 = Buffer.from([
@@ -160,22 +172,223 @@ async function encodeHardwareMascot(sourcePath)
             })
             .toBuffer();
         const image = ensureFirmwareJfifHeader(encoded);
-        if (image.length <= HARDWARE_MASCOT_MAX_BYTES)
+        if (image.length <= HARDWARE_MASCOT_JPEG_MAX_BYTES)
         {
             firmwareJpegInfo(image);
             return image;
         }
     }
 
-    throw new Error(`处理后的桌宠图片超过 ${HARDWARE_MASCOT_MAX_BYTES / 1024} KB`);
+    throw new Error(`处理后的桌宠图片超过 ${HARDWARE_MASCOT_JPEG_MAX_BYTES / 1024} KB`);
+}
+
+function boundedGifDelay(value)
+{
+    const delay = Number(value);
+
+    return Number.isFinite(delay)
+        ? Math.max(GIF_MIN_DELAY_MS, Math.min(GIF_MAX_DELAY_MS, Math.round(delay)))
+        : 100;
+}
+
+function buildHardwareGifFramePlan(delays, sourceFrameCount, targetFrameCount)
+{
+    const outputFrameCount = Math.max(
+        2,
+        Math.min(sourceFrameCount, targetFrameCount, GIF_MAX_FRAMES)
+    );
+    const sourceDelays = Array.from(
+        { length: sourceFrameCount },
+        (_value, index) => boundedGifDelay(delays[index])
+    );
+
+    return Array.from({ length: outputFrameCount }, (_value, outputIndex) => {
+        const sourceIndex = Math.floor((outputIndex * sourceFrameCount) / outputFrameCount);
+        const nextSourceIndex = Math.floor(
+            ((outputIndex + 1) * sourceFrameCount) / outputFrameCount
+        );
+        const delay = sourceDelays
+            .slice(sourceIndex, Math.max(sourceIndex + 1, nextSourceIndex))
+            .reduce((total, frameDelay) => total + frameDelay, 0);
+        return {
+            sourceIndex,
+            delay: Math.min(GIF_MAX_AGGREGATED_DELAY_MS, delay)
+        };
+    });
+}
+
+async function encodeHardwareGifCandidate(input, inputOptions, canvasSize, delays, loop)
+{
+    for (const colours of GIF_COLOUR_COUNTS)
+    {
+        let pipeline = sharp(input, inputOptions);
+        const raw = inputOptions && inputOptions.raw;
+        if (!raw || raw.width !== canvasSize || raw.pageHeight !== canvasSize)
+        {
+            pipeline = pipeline.resize(canvasSize, canvasSize, {
+                fit: "contain",
+                background: HARDWARE_MASCOT_BACKGROUND,
+                withoutEnlargement: false
+            });
+        }
+        const image = await pipeline.gif({
+                colours,
+                effort: 7,
+                dither: 1,
+                interFrameMaxError: 0,
+                interPaletteMaxError: 3,
+                loop,
+                delay: delays
+            })
+            .toBuffer();
+        if (image.length <= HARDWARE_MASCOT_GIF_MAX_BYTES &&
+            "GIF89a" === image.subarray(0, 6).toString("ascii"))
+        {
+            const outputMetadata = await sharp(image, { animated: true }).metadata();
+            const outputFrameCount = Number(outputMetadata.pages) || 1;
+            if (2 <= outputFrameCount && GIF_MAX_FRAMES >= outputFrameCount &&
+                canvasSize === Number(outputMetadata.width) &&
+                canvasSize === Number(outputMetadata.pageHeight))
+            {
+                return image;
+            }
+        }
+    }
+
+    return null;
+}
+
+async function renderHardwareGifFrames(sourcePath, framePlan, canvasSize)
+{
+    const frames = [];
+
+    for (const frame of framePlan)
+    {
+        const pixels = await sharp(sourcePath, {
+            page: frame.sourceIndex,
+            pages: 1,
+            failOn: "warning",
+            limitInputPixels: GIF_SOURCE_PIXEL_LIMIT
+        })
+            .rotate()
+            .resize(canvasSize, canvasSize, {
+                fit: "contain",
+                background: HARDWARE_MASCOT_BACKGROUND,
+                withoutEnlargement: false
+            })
+            .ensureAlpha()
+            .raw()
+            .toBuffer();
+        frames.push(pixels);
+    }
+
+    return Buffer.concat(frames);
+}
+
+async function encodeHardwareMascotGif(sourcePath)
+{
+    if ("string" !== typeof sourcePath || !fs.existsSync(sourcePath))
+    {
+        throw new Error("桌宠 GIF 不存在");
+    }
+
+    const metadata = await sharp(sourcePath, {
+        animated: true,
+        failOn: "warning",
+        limitInputPixels: GIF_SOURCE_PIXEL_LIMIT
+    }).metadata();
+    const frameCount = Number(metadata.pages) || 1;
+    if (2 > frameCount)
+    {
+        throw new Error("所选 GIF 不包含动画帧");
+    }
+    const delays = Array.from(
+        { length: frameCount },
+        (_value, index) => boundedGifDelay((metadata.delay || [])[index])
+    );
+    const loop = Number.isInteger(metadata.loop) ? Math.max(0, metadata.loop) : 0;
+    const totalDurationMs = delays.reduce((total, delay) => total + delay, 0);
+    const playbackFrameLimit = Math.max(
+        2,
+        Math.floor(totalDurationMs / GIF_TARGET_MIN_DELAY_MS)
+    );
+
+    if ((GIF_MAX_FRAMES >= frameCount) && (playbackFrameLimit >= frameCount))
+    {
+        for (const canvasSize of GIF_CANVAS_SIZES)
+        {
+            const image = await encodeHardwareGifCandidate(
+                sourcePath,
+                {
+                    animated: true,
+                    failOn: "warning",
+                    limitInputPixels: GIF_SOURCE_PIXEL_LIMIT
+                },
+                canvasSize,
+                delays,
+                loop
+            );
+            if (image)
+            {
+                return image;
+            }
+        }
+    }
+
+    const frameTargets = [playbackFrameLimit, ...GIF_FRAME_TARGETS]
+        .map((target) => Math.min(frameCount, target))
+        .filter((target, index, values) =>
+            2 <= target && values.indexOf(target) === index);
+    for (const targetFrameCount of frameTargets)
+    {
+        const framePlan = buildHardwareGifFramePlan(
+            metadata.delay || [],
+            frameCount,
+            targetFrameCount
+        );
+        for (const canvasSize of GIF_CANVAS_SIZES)
+        {
+            const renderedFrames = await renderHardwareGifFrames(
+                sourcePath,
+                framePlan,
+                canvasSize
+            );
+            const image = await encodeHardwareGifCandidate(
+                renderedFrames,
+                {
+                    raw: {
+                        width: canvasSize,
+                        height: canvasSize * framePlan.length,
+                        channels: 4,
+                        pageHeight: canvasSize
+                    }
+                },
+                canvasSize,
+                framePlan.map((frame) => frame.delay),
+                loop
+            );
+            if (image)
+            {
+                return image;
+            }
+        }
+    }
+
+    throw new Error("该 GIF 无法转换为硬件可播放动画，请尝试更短的动画");
 }
 
 async function prepareHardwareMascot(sourcePath, assetDirectory)
 {
     const targetDirectory = path.join(assetDirectory, "mascot");
-    const targetPath = path.join(targetDirectory, "hardware-mascot.jpg");
+    const animatedGif = ".gif" === path.extname(sourcePath).toLowerCase();
+    const targetPath = path.join(
+        targetDirectory,
+        animatedGif ? "hardware-mascot.gif" : "hardware-mascot.jpg"
+    );
     const temporaryPath = `${targetPath}.tmp`;
-    const image = await encodeHardwareMascot(sourcePath);
+    const image = animatedGif
+        ? await encodeHardwareMascotGif(sourcePath)
+        : await encodeHardwareMascot(sourcePath);
 
     fs.mkdirSync(targetDirectory, { recursive: true });
     fs.writeFileSync(temporaryPath, image);
@@ -184,6 +397,14 @@ async function prepareHardwareMascot(sourcePath, assetDirectory)
         fs.unlinkSync(targetPath);
     }
     fs.renameSync(temporaryPath, targetPath);
+    const stalePath = path.join(
+        targetDirectory,
+        animatedGif ? "hardware-mascot.jpg" : "hardware-mascot.gif"
+    );
+    if (fs.existsSync(stalePath))
+    {
+        fs.unlinkSync(stalePath);
+    }
     return targetPath;
 }
 
@@ -195,15 +416,39 @@ async function isFirmwareCompatibleMascot(hardwarePath)
     }
 
     const image = fs.readFileSync(hardwarePath);
-    if (4 > image.length || HARDWARE_MASCOT_MAX_BYTES < image.length ||
-        10 > image.length ||
-        "ffd8ffe000104a464946" !== image.subarray(0, 10).toString("hex"))
+    if (4 > image.length || HARDWARE_MASCOT_MAX_BYTES < image.length)
     {
         return false;
     }
 
     try
     {
+        if ("GIF89a" === image.subarray(0, 6).toString("ascii"))
+        {
+            const metadata = await sharp(image, { animated: true }).metadata();
+            const frameCount = Number(metadata.pages) || 1;
+            const delays = Array.from(
+                { length: frameCount },
+                (_value, index) => boundedGifDelay((metadata.delay || [])[index])
+            );
+            const totalDurationMs = delays.reduce((total, delay) => total + delay, 0);
+            const playbackFrameLimit = Math.max(
+                2,
+                Math.floor(totalDurationMs / GIF_TARGET_MIN_DELAY_MS)
+            );
+            return HARDWARE_MASCOT_GIF_MAX_BYTES >= image.length &&
+                2 <= frameCount && GIF_MAX_FRAMES >= frameCount &&
+                playbackFrameLimit >= frameCount &&
+                0 < Number(metadata.width) &&
+                HARDWARE_MASCOT_SIZE >= Number(metadata.width) &&
+                0 < Number(metadata.pageHeight) &&
+                HARDWARE_MASCOT_SIZE >= Number(metadata.pageHeight);
+        }
+        if (10 > image.length ||
+            "ffd8ffe000104a464946" !== image.subarray(0, 10).toString("hex"))
+        {
+            return false;
+        }
         const info = firmwareJpegInfo(image);
         const decoded = await sharp(image, {
             animated: false,
@@ -280,10 +525,14 @@ async function findHardwareMascotSource(hardwarePath)
 
 module.exports = {
     encodeHardwareMascot,
+    encodeHardwareMascotGif,
     findHardwareMascotSource,
     firmwareJpegInfo,
     HARDWARE_MASCOT_BACKGROUND,
     HARDWARE_MASCOT_MAX_BYTES,
+    HARDWARE_MASCOT_GIF_MAX_BYTES,
+    HARDWARE_MASCOT_GIF_SIZE,
+    HARDWARE_MASCOT_JPEG_MAX_BYTES,
     HARDWARE_MASCOT_SIZE,
     isFirmwareCompatibleMascot,
     prepareHardwareMascot

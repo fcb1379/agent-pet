@@ -3,7 +3,7 @@
 const FRAME_SIZE = 20;
 const FRAME_PAYLOAD_SIZE = 10;
 const MAX_SESSION_COUNT = 12;
-const MAX_MASCOT_IMAGE_BYTES = 128 * 1024;
+const MAX_MASCOT_IMAGE_BYTES = 512 * 1024;
 const SERVICE_UUID = "7a1e0001-6b5f-4f5c-8c9d-3e2f1a0b1000";
 const STATUS_RX_UUID = "7a1e0002-6b5f-4f5c-8c9d-3e2f1a0b1000";
 const IMAGE_RX_UUID = "7a1e0003-6b5f-4f5c-8c9d-3e2f1a0b1000";
@@ -19,6 +19,7 @@ const IMAGE_COMMAND_DATA = 2;
 const IMAGE_COMMAND_COMMIT = 3;
 const IMAGE_COMMAND_RESET = 4;
 const IMAGE_FORMAT_JPEG = 1;
+const IMAGE_FORMAT_GIF = 2;
 const IMAGE_DATA_SIZE = 235;
 const IMAGE_DATA_SIZES = Object.freeze([235, 176, 120, 64, 11]);
 const IMAGE_PACKET_OVERHEAD = 9;
@@ -106,6 +107,11 @@ function encodeMascotImage(imageBytes, dataSize = IMAGE_DATA_SIZE)
         throw new Error(`Invalid mascot image data size: ${dataSize}`);
     }
 
+    const imageFormat = 6 <= image.length &&
+        0x47 === image[0] && 0x49 === image[1] && 0x46 === image[2] &&
+        0x38 === image[3] && 0x39 === image[4] && 0x61 === image[5]
+        ? IMAGE_FORMAT_GIF
+        : IMAGE_FORMAT_JPEG;
     const imageCrc = crc32Mpeg2(image);
     const frames = [];
     const begin = new Uint8Array(FRAME_SIZE);
@@ -116,7 +122,7 @@ function encodeMascotImage(imageBytes, dataSize = IMAGE_DATA_SIZE)
     begin[2] = 1;
     begin[3] = IMAGE_COMMAND_BEGIN;
     setUint24(begin, 4, image.length);
-    begin[7] = IMAGE_FORMAT_JPEG;
+    begin[7] = imageFormat;
     beginView.setUint32(8, imageCrc, true);
     frames.push(finalizeImageFrame(begin));
 
@@ -143,7 +149,7 @@ function encodeMascotImage(imageBytes, dataSize = IMAGE_DATA_SIZE)
     commit[2] = 1;
     commit[3] = IMAGE_COMMAND_COMMIT;
     setUint24(commit, 4, image.length);
-    commit[7] = IMAGE_FORMAT_JPEG;
+    commit[7] = imageFormat;
     commitView.setUint32(8, imageCrc, true);
     frames.push(finalizeImageFrame(commit));
 
@@ -154,8 +160,10 @@ function parseMascotDigest(value)
     const bytes = value instanceof DataView
         ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
         : Uint8Array.from(value || []);
-    if (FRAME_SIZE !== bytes.length || IMAGE_MAGIC_FIRST !== bytes[0] ||
-        IMAGE_MAGIC_SECOND !== bytes[1] || 1 !== bytes[2])
+    const isLegacy = FRAME_SIZE === bytes.length && 1 === bytes[2];
+    const hasFlowStatus = 32 === bytes.length && 2 === bytes[2];
+    if ((!isLegacy && !hasFlowStatus) || IMAGE_MAGIC_FIRST !== bytes[0] ||
+        IMAGE_MAGIC_SECOND !== bytes[1])
     {
         throw new Error("Invalid mascot digest response");
     }
@@ -164,7 +172,19 @@ function parseMascotDigest(value)
     const md5 = available
         ? Array.from(bytes.subarray(4, 20), (byte) => byte.toString(16).padStart(2, "0")).join("")
         : null;
-    return { available, md5 };
+    if (!hasFlowStatus)
+    {
+        return { available, md5 };
+    }
+    const statusView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return {
+        available,
+        md5,
+        received: statusView.getUint32(20, true),
+        total: statusView.getUint32(24, true),
+        state: bytes[28],
+        result: bytes[29]
+    };
 }
 function fnv1a32(value)
 {
@@ -378,6 +398,7 @@ const HARDWARE_PROTOCOL_API = Object.freeze({
     IMAGE_DATA_SIZES,
     IMAGE_PACKET_OVERHEAD,
     IMAGE_FORMAT_JPEG,
+    IMAGE_FORMAT_GIF,
     IMAGE_DIGEST_UUID,
     IMAGE_RX_UUID,
     MAX_SESSION_COUNT,

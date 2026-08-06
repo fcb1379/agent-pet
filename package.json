@@ -1,6 +1,6 @@
 {
   "name": "agent-pet",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "A desktop pet that reflects Codex and Claude Code activity on Windows, WSL and macOS.",
   "main": "src/main.js",
   "type": "commonjs",

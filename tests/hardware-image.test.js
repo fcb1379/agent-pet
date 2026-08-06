@@ -9,13 +9,15 @@ const sharp = require("sharp");
 const {
     findHardwareMascotSource,
     firmwareJpegInfo,
+    HARDWARE_MASCOT_GIF_MAX_BYTES,
+    HARDWARE_MASCOT_GIF_SIZE,
     HARDWARE_MASCOT_MAX_BYTES,
     HARDWARE_MASCOT_SIZE,
     isFirmwareCompatibleMascot,
     prepareHardwareMascot
 } = require("../src/hardware-image");
 
-test("hardware mascot is persisted as a bounded 336px JPEG", async () => {
+test("hardware mascot is persisted as a bounded 192px JPEG", async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pet-hardware-image-"));
 
     try
@@ -50,7 +52,7 @@ test("hardware mascot is persisted as a bounded 336px JPEG", async () => {
     }
 });
 
-test("animated GIF hardware mascot uses frame zero and safe baseline 4:2:0 JPEG", async () => {
+test("animated GIF hardware mascot preserves frames and delays at the safe hardware size", async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pet-hardware-gif-"));
 
     try
@@ -73,14 +75,63 @@ test("animated GIF hardware mascot uses frame zero and safe baseline 4:2:0 JPEG"
 
         const targetPath = await prepareHardwareMascot(sourcePath, directory);
         const image = fs.readFileSync(targetPath);
-        const info = firmwareJpegInfo(image);
-        const center = await sharp(image)
-            .extract({ left: 168, top: 168, width: 1, height: 1 })
-            .raw()
-            .toBuffer();
+        const metadata = await sharp(image, { animated: true }).metadata();
 
-        assert.deepEqual(info.sampling, [0x22, 0x11, 0x11]);
-        assert.ok(center[0] > center[2], "frame zero must be used instead of the blue second frame");
+        assert.equal(path.basename(targetPath), "hardware-mascot.gif");
+        assert.equal(image.subarray(0, 6).toString("ascii"), "GIF89a");
+        assert.equal(metadata.pages, 2);
+        assert.equal(metadata.width, HARDWARE_MASCOT_GIF_SIZE);
+        assert.equal(metadata.pageHeight, HARDWARE_MASCOT_GIF_SIZE);
+        assert.deepEqual(metadata.delay, [40, 80]);
+        assert.ok(image.length <= HARDWARE_MASCOT_GIF_MAX_BYTES);
+        assert.equal(await isFirmwareCompatibleMascot(targetPath), true);
+    }
+    finally
+    {
+        sharp.cache(false);
+        await fs.promises.rm(directory, {
+            recursive: true,
+            force: true,
+            maxRetries: 10,
+            retryDelay: 100
+        });
+    }
+});
+
+test("oversized-frame-count GIF is sampled automatically for firmware transfer", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pet-hardware-gif-sampled-"));
+
+    try
+    {
+        const sourcePath = path.join(directory, "many-frames.gif");
+        const width = 2;
+        const height = 2;
+        const frameCount = 121;
+        const delays = Array(frameCount).fill(40);
+        const pixels = Buffer.alloc(width * height * 4 * frameCount);
+        for (let frameIndex = 0; frameIndex < frameCount; frameIndex++)
+        {
+            for (let pixelIndex = 0; pixelIndex < width * height; pixelIndex++)
+            {
+                const offset = ((frameIndex * width * height) + pixelIndex) * 4;
+                pixels[offset] = (frameIndex * 17) & 0xff;
+                pixels[offset + 1] = (frameIndex * 29) & 0xff;
+                pixels[offset + 2] = (frameIndex * 43) & 0xff;
+                pixels[offset + 3] = 255;
+            }
+        }
+        await sharp(pixels, {
+            raw: { width, height: height * frameCount, channels: 4, pageHeight: height }
+        }).gif({ delay: delays, loop: 0 }).toFile(sourcePath);
+
+        const targetPath = await prepareHardwareMascot(sourcePath, directory);
+        const metadata = await sharp(targetPath, { animated: true }).metadata();
+
+        assert.equal(path.basename(targetPath), "hardware-mascot.gif");
+        assert.ok(2 <= metadata.pages && 60 >= metadata.pages);
+        assert.equal(metadata.delay.reduce((total, delay) => total + delay, 0), 4840);
+        assert.ok(125 <= 4840 / metadata.pages);
+        assert.ok(fs.statSync(targetPath).size <= HARDWARE_MASCOT_GIF_MAX_BYTES);
         assert.equal(await isFirmwareCompatibleMascot(targetPath), true);
     }
     finally

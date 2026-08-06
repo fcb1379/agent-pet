@@ -268,6 +268,30 @@ test("custom animation assets are copied locally in natural filename order", () 
         fs.rmSync(directory, { recursive: true, force: true });
     }
 });
+test("reimporting the same GIF reuses its immutable cache file", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pet-assets-reimport-"));
+    const originalCopyFileSync = fs.copyFileSync;
+    try
+    {
+        const sourcePath = path.join(directory, "source.gif");
+        const targetDirectory = path.join(directory, "target");
+        fs.writeFileSync(sourcePath, "GIF89a-test-animation");
+        const [firstPath] = importImageFiles([sourcePath], targetDirectory, "mascot");
+
+        fs.copyFileSync = () => {
+            throw new Error("existing cache file must not be overwritten");
+        };
+        const [secondPath] = importImageFiles([sourcePath], targetDirectory, "mascot");
+
+        assert.equal(secondPath, firstPath);
+        assert.equal(fs.readFileSync(secondPath, "utf8"), "GIF89a-test-animation");
+    }
+    finally
+    {
+        fs.copyFileSync = originalCopyFileSync;
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
 test("custom image URL changes when a fixed asset path is overwritten", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pet-asset-url-"));
     try

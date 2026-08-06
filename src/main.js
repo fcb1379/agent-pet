@@ -157,7 +157,10 @@ async function hardwareMascotPayload()
         return { revision: "default", data: null };
     }
 
-    let hardwarePath = path.join(customAssetDirectory(), "mascot", "hardware-mascot.jpg");
+    const hardwareFileName = ".gif" === path.extname(mascotPath).toLowerCase()
+        ? "hardware-mascot.gif"
+        : "hardware-mascot.jpg";
+    let hardwarePath = path.join(customAssetDirectory(), "mascot", hardwareFileName);
     if ("hardware-mascot.jpg" === path.basename(mascotPath).toLowerCase())
     {
         hardwarePath = mascotPath;

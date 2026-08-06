@@ -1370,13 +1370,14 @@ body.is-wooden-fish-hit #state-badge {
 }
 
 #hardware-button[data-status="transferring"] {
-    min-width: 66px;
+    min-width: 112px;
     border-color: rgba(92, 225, 155, 0.78);
     color: #edfff6;
 }
 
 #hardware-button[data-status="connected"],
 #hardware-button[data-status="synced"] {
+    min-width: 96px;
     border-color: rgba(92, 225, 155, 0.78);
     color: #c9ffe2;
     background: rgba(20, 83, 58, 0.9);

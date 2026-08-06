@@ -32,6 +32,7 @@ test("mascot JPEG uses negotiated-size packets with ordered offsets and per-pack
     assert.equal(frames[0][0], 0x41);
     assert.equal(frames[0][1], 0x49);
     assert.equal(frames[0][3], 1);
+    assert.equal(frames[0][7], 1);
     assert.equal(frames[0][4] | (frames[0][5] << 8) | (frames[0][6] << 16), image.length);
     assert.equal(new DataView(frames[0].buffer).getUint32(8, true), crc32Mpeg2(image));
     assert.equal(frames[1][3], 2);
@@ -45,6 +46,17 @@ test("mascot JPEG uses negotiated-size packets with ordered offsets and per-pack
     {
         assert.equal(frame.at(-1), crc8Atm(frame.subarray(0, -1)));
     }
+});
+
+test("mascot GIF uses the animated image format in begin and commit frames", () => {
+    const image = Uint8Array.from([
+        0x47, 0x49, 0x46, 0x38, 0x39, 0x61,
+        0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0x3b
+    ]);
+    const frames = encodeMascotImage(image);
+
+    assert.equal(frames[0][7], 2);
+    assert.equal(frames.at(-1)[7], 2);
 });
 
 
@@ -65,6 +77,24 @@ test("mascot digest response exposes the persistent device image MD5", () => {
     assert.deepEqual(parseMascotDigest(new DataView(response.buffer)), {
         available: true,
         md5: "d41d8cd98f00b204e9800998ecf8427e"
+    });
+});
+test("mascot digest v2 exposes firmware-processed transfer progress", () => {
+    const response = new Uint8Array(32);
+    response.set([0x41, 0x49, 0x02, 0x00]);
+    const view = new DataView(response.buffer);
+    view.setUint32(20, 3760, true);
+    view.setUint32(24, 285440, true);
+    response[28] = 1;
+    response[29] = 0;
+
+    assert.deepEqual(parseMascotDigest(view), {
+        available: false,
+        md5: null,
+        received: 3760,
+        total: 285440,
+        state: 1,
+        result: 0
     });
 });
 test("idle snapshot matches the firmware golden frame", () => {
