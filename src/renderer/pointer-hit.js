@@ -152,7 +152,7 @@
         if (window.agentPetPointerHitPolicy
             && window.agentPetPointerHitPolicy.shouldPreserveWoodenFishHit(
                 woodenFishActive,
-                woodenFishScene.getBoundingClientRect(),
+                [woodenFishScene.getBoundingClientRect(), mascot.getBoundingClientRect()],
                 clientX,
                 clientY))
         {
@@ -219,6 +219,11 @@
     window.addEventListener("mouseout", (event) => {
         if (!event.relatedTarget)
         {
+            if (dragActive)
+            {
+                publish(true);
+                return;
+            }
             lastPointerEvent = null;
             publish(false);
         }

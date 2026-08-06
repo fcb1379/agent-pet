@@ -11,9 +11,15 @@
             && clientY <= rect.bottom;
     }
 
-    function shouldPreserveWoodenFishHit(active, hitRect, clientX, clientY)
+    function shouldPreserveWoodenFishHit(active, hitRects, clientX, clientY)
     {
-        return true === active && pointInsideRect(hitRect, clientX, clientY);
+        if (true !== active)
+        {
+            return false;
+        }
+
+        const rects = Array.isArray(hitRects) ? hitRects : [hitRects];
+        return rects.some((rect) => pointInsideRect(rect, clientX, clientY));
     }
 
     const policy = {
