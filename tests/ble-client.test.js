@@ -277,8 +277,8 @@ test("BLE image fast path bursts data commands and verifies the committed digest
             Uint8Array.from([index])),
         encodeReset: () => [new Uint8Array(20)],
         parseImageDigest: () => ({
-            available: 6 <= digestReads,
-            md5: 6 <= digestReads ? expectedMd5 : null,
+            available: 11 <= digestReads,
+            md5: 11 <= digestReads ? expectedMd5 : null,
             received: 1 < digestReads ? 3 : 0
         }),
         wait: async (milliseconds) => waits.push(milliseconds),
@@ -309,7 +309,8 @@ test("BLE image fast path bursts data commands and verifies the committed digest
     assert.deepEqual(commandWrites, Array.from({ length: 13 }, (_value, index) => index + 1));
     assert.equal(waits.filter((milliseconds) => 3 === milliseconds).length, 4);
     assert.ok(waits.includes(400));
-    assert.equal(digestReads, 6);
+    assert.equal(digestReads, 11);
+    assert.equal(waits.filter((milliseconds) => 400 === milliseconds).length, 6);
     assert.ok(statuses.some(([status, detail]) =>
         "transferring" === status && detail.includes("测速中")));
     assert.ok(statuses
