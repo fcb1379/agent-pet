@@ -16,7 +16,7 @@ const GIF_CANVAS_SIZES = Object.freeze([HARDWARE_MASCOT_GIF_SIZE, 160, 128]);
 const GIF_FRAME_TARGETS = Object.freeze([60, 45, 30, 24, 18, 12, 8, 4, 2]);
 const GIF_MAX_FRAMES = 60;
 const GIF_MIN_DELAY_MS = 20;
-const GIF_TARGET_MIN_DELAY_MS = 125;
+const GIF_TARGET_MIN_DELAY_MS = 50;
 const GIF_MAX_DELAY_MS = 1000;
 const GIF_MAX_AGGREGATED_DELAY_MS = 600000;
 const GIF_SOURCE_PIXEL_LIMIT = 256 * 1024 * 1024;
@@ -383,7 +383,7 @@ async function prepareHardwareMascot(sourcePath, assetDirectory)
     const animatedGif = ".gif" === path.extname(sourcePath).toLowerCase();
     const targetPath = path.join(
         targetDirectory,
-        animatedGif ? "hardware-mascot.gif" : "hardware-mascot.jpg"
+        animatedGif ? "hardware-mascot-v2.gif" : "hardware-mascot.jpg"
     );
     const temporaryPath = `${targetPath}.tmp`;
     const image = animatedGif
@@ -397,13 +397,16 @@ async function prepareHardwareMascot(sourcePath, assetDirectory)
         fs.unlinkSync(targetPath);
     }
     fs.renameSync(temporaryPath, targetPath);
-    const stalePath = path.join(
-        targetDirectory,
-        animatedGif ? "hardware-mascot.jpg" : "hardware-mascot.gif"
-    );
-    if (fs.existsSync(stalePath))
+    const staleFileNames = animatedGif
+        ? ["hardware-mascot.jpg", "hardware-mascot.gif"]
+        : ["hardware-mascot-v2.gif", "hardware-mascot.gif"];
+    for (const staleFileName of staleFileNames)
     {
-        fs.unlinkSync(stalePath);
+        const stalePath = path.join(targetDirectory, staleFileName);
+        if (fs.existsSync(stalePath))
+        {
+            fs.unlinkSync(stalePath);
+        }
     }
     return targetPath;
 }

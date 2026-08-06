@@ -158,7 +158,7 @@ async function hardwareMascotPayload()
     }
 
     const hardwareFileName = ".gif" === path.extname(mascotPath).toLowerCase()
-        ? "hardware-mascot.gif"
+        ? "hardware-mascot-v2.gif"
         : "hardware-mascot.jpg";
     let hardwarePath = path.join(customAssetDirectory(), "mascot", hardwareFileName);
     if ("hardware-mascot.jpg" === path.basename(mascotPath).toLowerCase())

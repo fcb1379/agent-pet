@@ -77,7 +77,7 @@ test("animated GIF hardware mascot preserves frames and delays at the safe hardw
         const image = fs.readFileSync(targetPath);
         const metadata = await sharp(image, { animated: true }).metadata();
 
-        assert.equal(path.basename(targetPath), "hardware-mascot.gif");
+        assert.equal(path.basename(targetPath), "hardware-mascot-v2.gif");
         assert.equal(image.subarray(0, 6).toString("ascii"), "GIF89a");
         assert.equal(metadata.pages, 2);
         assert.equal(metadata.width, HARDWARE_MASCOT_GIF_SIZE);
@@ -127,10 +127,10 @@ test("oversized-frame-count GIF is sampled automatically for firmware transfer",
         const targetPath = await prepareHardwareMascot(sourcePath, directory);
         const metadata = await sharp(targetPath, { animated: true }).metadata();
 
-        assert.equal(path.basename(targetPath), "hardware-mascot.gif");
+        assert.equal(path.basename(targetPath), "hardware-mascot-v2.gif");
         assert.ok(2 <= metadata.pages && 60 >= metadata.pages);
         assert.equal(metadata.delay.reduce((total, delay) => total + delay, 0), 4840);
-        assert.ok(125 <= 4840 / metadata.pages);
+        assert.ok(50 <= 4840 / metadata.pages);
         assert.ok(fs.statSync(targetPath).size <= HARDWARE_MASCOT_GIF_MAX_BYTES);
         assert.equal(await isFirmwareCompatibleMascot(targetPath), true);
     }
