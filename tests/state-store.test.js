@@ -103,3 +103,55 @@ test("finished sessions can be removed without touching active sessions", () => 
         fs.rmSync(directory, { recursive: true, force: true });
     }
 });
+
+test("approval waits return to running after the request is handled outside Agent Pet", () => {
+    const now = Date.now();
+    const session = {
+        state: "needs_input",
+        approvalId: "approval-1",
+        updatedAt: new Date(now).toISOString()
+    };
+
+    assert.equal(effectiveState(session, now, new Set(["approval-1"])), "needs_input");
+    assert.equal(effectiveState(session, now, new Set()), "running");
+    assert.equal(effectiveState(session, now), "needs_input");
+});
+
+test("text input waits remain pending when approval requests change", () => {
+    const now = Date.now();
+    const session = {
+        state: "needs_input",
+        updatedAt: new Date(now).toISOString()
+    };
+
+    assert.equal(effectiveState(session, now, new Set()), "needs_input");
+});
+
+test("state store refreshes approval-backed sessions when requests disappear", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pet-state-"));
+    const now = Date.now();
+    try
+    {
+        fs.writeFileSync(path.join(directory, "input.json"), JSON.stringify({
+            id: "input",
+            state: "needs_input",
+            approvalId: "approval-1",
+            updatedAt: new Date(now).toISOString()
+        }));
+        const store = new StateStore(directory);
+        const snapshots = [];
+        store.on("change", (snapshot) => snapshots.push(snapshot));
+
+        store.setApprovalRequests([{ id: "approval-1" }]);
+        assert.equal(snapshots.at(-1).state, "needs_input");
+
+        store.setApprovalRequests([]);
+        assert.equal(snapshots.at(-1).state, "running");
+        assert.equal(snapshots.at(-1).sessions[0].approvalId, undefined);
+        assert.equal(snapshots.at(-1).sessions[0].message, "授权请求已在原会话处理，继续执行中");
+    }
+    finally
+    {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
