@@ -1,0 +1,25 @@
+src/main.js
+  s_285146986cdcdb::t_347a3bfcf05ea4 161
+tests/hardware-image.test.js
+  s_285146986cdcdb::t_d4bb1cea9e3343 133
+  s_285146986cdcdb::t_347a3bfcf05ea4 80,130
+src/hardware-image.js
+  s_285146986cdcdb::t_d4bb1cea9e3343 19
+  s_285146986cdcdb::t_347a3bfcf05ea4 386,400-403,405-409
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "4d9184168832c1d77d73701d209d0c75588daed9",
+  "prompts": {},
+  "sessions": {
+    "s_285146986cdcdb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd167-97e3-7830-af9f-4e8a198f25b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
