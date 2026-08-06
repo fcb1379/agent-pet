@@ -1,0 +1,42 @@
+src/renderer/renderer.js
+  s_285146986cdcdb::t_f4cee30f7eec40 534-535,541-544
+  s_285146986cdcdb::t_40099da2745ebe 67,73-79,493-497,528-533,536-540,546
+  s_285146986cdcdb::t_6fe95951a7597f 545
+tests/ble-client.test.js
+  s_285146986cdcdb::t_75c47af3f3f9d3 357,359-393
+  s_285146986cdcdb::t_424b2b7b12d14c 11-14,326-356
+  s_66f621550653f0::t_5dab66400a51f3 358
+src/hardware-protocol.js
+  s_285146986cdcdb::t_ac800fa8c4d96a 11-13,72-126,461-462,477,481
+tests/hardware-protocol.test.js
+  s_285146986cdcdb::t_424b2b7b12d14c 9,13,28-40
+src/renderer/ble-client.js
+  s_285146986cdcdb::t_80d6190c861b34 643-648
+  s_285146986cdcdb::t_1442e9b7bab396 123,262,324,638-642,661-662,664-699,703,767
+  s_285146986cdcdb::t_00e12b310f7c6c 68,78-81,111,267,292,304-314,320,628-637,649-660,713,771
+  s_66f621550653f0::t_a147868a1f4f6d 627,663
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "27d8d91219a2059d5e5d95a6cf7f4842f3427848",
+  "prompts": {},
+  "sessions": {
+    "s_285146986cdcdb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd167-97e3-7830-af9f-4e8a198f25b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    },
+    "s_66f621550653f0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd4f4-39de-7f41-a6bc-4458d1d27f68",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
