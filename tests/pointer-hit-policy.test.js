@@ -19,3 +19,21 @@ test("wooden fish preservation ends with the animation or outside its active bou
     assert.equal(shouldPreserveWoodenFishHit(false, woodenFishRect, 120, 160), false);
     assert.equal(shouldPreserveWoodenFishHit(true, woodenFishRect, 250, 160), false);
 });
+
+test("wooden fish animation preserves the original mascot interaction area", () => {
+    const mascotRect = Object.freeze({
+        left: 10,
+        right: 290,
+        top: 60,
+        bottom: 330
+    });
+
+    assert.equal(
+        shouldPreserveWoodenFishHit(true, [woodenFishRect, mascotRect], 270, 250),
+        true
+    );
+    assert.equal(
+        shouldPreserveWoodenFishHit(true, [woodenFishRect, mascotRect], 295, 250),
+        false
+    );
+});

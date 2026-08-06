@@ -65,6 +65,7 @@ body.state-error {
 
 #speech-bubble {
     position: relative;
+    width: 262px;
     min-width: 210px;
     max-width: 262px;
     min-height: 62px;
@@ -648,7 +649,8 @@ body:hover #hide-button {
     justify-content: center;
     gap: 4px;
     color: #cbd6e8;
-    -webkit-app-region: no-drag;
+    cursor: move;
+    -webkit-app-region: drag;
 }
 
 #resource-panel[hidden],
@@ -990,6 +992,7 @@ body.hover-action-squash #mascot {
     background: rgba(80, 216, 144, 0.12);
     cursor: pointer;
     font-size: 9px;
+    -webkit-app-region: no-drag;
 }
 
 #clear-finished-sessions:disabled {
