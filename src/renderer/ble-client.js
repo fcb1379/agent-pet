@@ -12,6 +12,7 @@
     const IMAGE_COMMIT_VERIFY_ATTEMPTS = 5;
     const IMAGE_COMMIT_VERIFY_DELAY_MS = 400;
     const IMAGE_SPEED_WARMUP_MS = 500;
+    const IMAGE_GATT_OPERATION_TIMEOUT_MS = 6000;
 
     function wait(milliseconds)
     {
@@ -49,6 +50,11 @@
             "failed to connect",
             "gatt server is disconnected"
         ].some((fragment) => message.includes(fragment));
+    }
+
+    function gattOperationTimedOut(error)
+    {
+        return "GattOperationTimeoutError" === (error && error.name);
     }
 
     class AgentPetBleClient
@@ -89,6 +95,9 @@
             this.imageSpeedWarmupMs = Number.isInteger(options.imageSpeedWarmupMs)
                 ? Math.max(0, options.imageSpeedWarmupMs)
                 : IMAGE_SPEED_WARMUP_MS;
+            this.imageGattOperationTimeoutMs = Number.isInteger(options.imageGattOperationTimeoutMs)
+                ? Math.max(1, options.imageGattOperationTimeoutMs)
+                : IMAGE_GATT_OPERATION_TIMEOUT_MS;
             this.enabled = false !== options.enabled;
             this.device = null;
             this.characteristic = null;
@@ -105,6 +114,54 @@
                 : DEFAULT_RECONNECT_ATTEMPTS;
             this.manualDisconnect = false;
             this.handleDisconnected = this.handleDisconnected.bind(this);
+        }
+
+        async runImageGattOperation(operation, description)
+        {
+            let timeoutId = null;
+            const timeout = new Promise((_resolve, reject) => {
+                timeoutId = setTimeout(() => {
+                    const error = new Error(`${description} timed out`);
+                    error.name = "GattOperationTimeoutError";
+                    reject(error);
+                }, this.imageGattOperationTimeoutMs);
+            });
+
+            try
+            {
+                return await Promise.race([
+                    Promise.resolve().then(operation),
+                    timeout
+                ]);
+            }
+            finally
+            {
+                clearTimeout(timeoutId);
+            }
+        }
+
+        readImageDigestValue()
+        {
+            return this.runImageGattOperation(
+                () => this.imageDigestCharacteristic.readValue(),
+                "Image progress read"
+            );
+        }
+
+        writeImageValueWithResponse(frame)
+        {
+            return this.runImageGattOperation(
+                () => this.imageCharacteristic.writeValueWithResponse(frame),
+                "Image packet write"
+            );
+        }
+
+        writeImageValueWithoutResponse(frame)
+        {
+            return this.runImageGattOperation(
+                () => this.imageCharacteristic.writeValueWithoutResponse(frame),
+                "Image packet write"
+            );
         }
 
         isEnabled()
@@ -296,7 +353,7 @@
             {
                 try
                 {
-                    const digest = this.parseImageDigest(await this.imageDigestCharacteristic.readValue());
+                    const digest = this.parseImageDigest(await this.readImageDigestValue());
                     supportsFlowControl = Number.isInteger(digest.received);
                     const sameImage = image.data
                         ? Boolean(image.md5 && digest.available && image.md5 === digest.md5)
@@ -308,8 +365,12 @@
                         return;
                     }
                 }
-                catch (_error)
+                catch (error)
                 {
+                    if (gattOperationTimedOut(error))
+                    {
+                        throw error;
+                    }
                     /* Older firmware or a transient read failure falls back to a normal transfer. */
                 }
             }
@@ -348,13 +409,13 @@
                 {
                     if (useFastWrite)
                     {
-                        await this.imageCharacteristic.writeValueWithResponse(frames[0]);
+                        await this.writeImageValueWithResponse(frames[0]);
                         for (let index = 1; index < frames.length - 1; index++)
                         {
                             const isLastDataFrame = index + 2 === frames.length;
                             const isFlowControlBoundary =
                                 0 === index % this.imageFastBurstPackets || isLastDataFrame;
-                            await this.imageCharacteristic.writeValueWithoutResponse(frames[index]);
+                            await this.writeImageValueWithoutResponse(frames[index]);
                             if (isFlowControlBoundary)
                             {
                                 const requiredBytes = Math.min(imageByteLength, index * dataSize);
@@ -370,7 +431,7 @@
                                     try
                                     {
                                         const digest = this.parseImageDigest(
-                                            await this.imageDigestCharacteristic.readValue()
+                                            await this.readImageDigestValue()
                                         );
                                         if (Number.isInteger(digest.received) &&
                                             requiredBytes <= digest.received)
@@ -379,8 +440,12 @@
                                             break;
                                         }
                                     }
-                                    catch (_error)
+                                    catch (error)
                                     {
+                                        if (gattOperationTimedOut(error))
+                                        {
+                                            throw error;
+                                        }
                                         /* A busy firmware worker is polled again without blocking the UI. */
                                     }
                                 }
@@ -395,7 +460,7 @@
                                 this.onStatus("transferring", transferDetail(index, percent, "flow"));
                             }
                         }
-                        await this.imageCharacteristic.writeValueWithResponse(frames.at(-1));
+                        await this.writeImageValueWithResponse(frames.at(-1));
 
                         let committed = false;
                         for (let verifyAttempt = 0;
@@ -406,7 +471,7 @@
                             try
                             {
                                 const digest = this.parseImageDigest(
-                                    await this.imageDigestCharacteristic.readValue()
+                                    await this.readImageDigestValue()
                                 );
                                 if (image.md5 && digest.available && image.md5 === digest.md5)
                                 {
@@ -414,8 +479,12 @@
                                     break;
                                 }
                             }
-                            catch (_error)
+                            catch (error)
                             {
+                                if (gattOperationTimedOut(error))
+                                {
+                                    throw error;
+                                }
                                 /* Commit validation can briefly own the firmware image mutex. */
                             }
                         }
@@ -428,7 +497,7 @@
                     {
                         for (let index = 0; index < frames.length; index++)
                         {
-                            await this.imageCharacteristic.writeValueWithResponse(frames[index]);
+                            await this.writeImageValueWithResponse(frames[index]);
                             if (0 === index % progressStep || index + 1 === frames.length)
                             {
                                 const dataFrameCount = Math.max(0, Math.min(index, frames.length - 2));
@@ -459,7 +528,8 @@
                 catch (error)
                 {
                     lastError = error;
-                    if (!image.data || !this.isConnected() || attempt + 1 === dataSizes.length)
+                    if (gattOperationTimedOut(error) ||
+                        !image.data || !this.isConnected() || attempt + 1 === dataSizes.length)
                     {
                         throw error;
                     }
@@ -626,12 +696,14 @@
             IMAGE_FAST_BURST_PACKETS,
             IMAGE_FLOW_ACK_ATTEMPTS,
             IMAGE_FLOW_ACK_DELAY_MS,
+            IMAGE_GATT_OPERATION_TIMEOUT_MS,
             IMAGE_RETRY_DELAY_MS,
             IMAGE_SPEED_WARMUP_MS,
             RECONNECT_DELAY_MS,
             formatTransferDuration,
             formatTransferSpeed,
-            deviceIsUnavailable
+            deviceIsUnavailable,
+            gattOperationTimedOut
         };
     }
 })("undefined" !== typeof window ? window : globalThis);

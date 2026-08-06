@@ -318,6 +318,35 @@ test("BLE image fast path bursts data commands and verifies the committed digest
     assert.equal(client.syncedImageRevision, "fast");
 });
 
+test("BLE image transfer rejects a stalled progress read instead of hanging", async () => {
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        imageDigestCharacteristicUuid: "digest",
+        imageGattOperationTimeoutMs: 5,
+        encodeImage: () => [new Uint8Array(20)],
+        encodeReset: () => [new Uint8Array(20)],
+        parseImageDigest: () => ({ available: false, received: 0 })
+    });
+
+    client.device = { name: "test", gatt: { connected: true } };
+    client.characteristic = { writeValueWithResponse: async () => {} };
+    client.imageCharacteristic = { writeValueWithResponse: async () => {} };
+    client.imageDigestCharacteristic = { readValue: () => new Promise(() => {}) };
+    client.latestImage = {
+        revision: "stalled",
+        md5: "d41d8cd98f00b204e9800998ecf8427e",
+        data: Uint8Array.from([1, 2, 3])
+    };
+
+    await assert.rejects(
+        client.flushImage(),
+        (error) => "GattOperationTimeoutError" === error.name
+    );
+    assert.equal(client.syncedImageRevision, null);
+});
+
 test("BLE client releases a stale device so the next click performs a fresh scan", async () => {
     const statuses = [];
     const freshDevice = connectedDevice();
