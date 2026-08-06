@@ -454,6 +454,10 @@ function decideApproval(decision, requestId = latestApproval && latestApproval.i
     {
         latestApprovals = latestApprovals.filter((item) => item.id !== request.id);
         latestApproval = latestApprovals[0] || null;
+        if (stateStore)
+        {
+            stateStore.setApprovalRequests(latestApprovals);
+        }
         if (mainWindow && !mainWindow.isDestroyed())
         {
             mainWindow.webContents.send("approval-request", latestApproval);
@@ -469,6 +473,10 @@ function publishApprovals(requests)
 {
     latestApprovals = Array.isArray(requests) ? requests : [];
     latestApproval = latestApprovals[0] || null;
+    if (stateStore)
+    {
+        stateStore.setApprovalRequests(latestApprovals);
+    }
     if (mainWindow && !mainWindow.isDestroyed())
     {
         if (latestApproval)
