@@ -1,0 +1,43 @@
+tests/ble-client.test.js
+  s_285146986cdcdb::t_4e85dff321ed3d 49-75
+tests/hardware-protocol.test.js
+  s_285146986cdcdb::t_4e85dff321ed3d 169-182
+package.json
+  s_285146986cdcdb::t_58c1cb664a034e 3
+AGENTS.md
+  s_285146986cdcdb::t_8019fdd4e12a60 1-7
+src/hardware-protocol.js
+  s_285146986cdcdb::t_1a9833b6fa294f 21-22,436-437,440-444,536-547,576-577
+src/renderer/ble-client.js
+  s_285146986cdcdb::t_e7a554a9a64118 114,328,656-685
+  s_66f621550653f0::t_fcac4a7b3c42ae 686-691
+src/renderer/renderer.js
+  s_285146986cdcdb::t_0045c2580781bd 53,132,451,460,463-488
+  s_285146986cdcdb::t_897c282898d9f5 489
+package-lock.json
+  s_285146986cdcdb::t_73cb8896f3fe7d 3,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "a714f0b648e7caaeaa12a0e0fc99088992609e3b",
+  "prompts": {},
+  "sessions": {
+    "s_285146986cdcdb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd167-97e3-7830-af9f-4e8a198f25b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    },
+    "s_66f621550653f0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd4f4-39de-7f41-a6bc-4458d1d27f68",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
