@@ -52,6 +52,7 @@ test("settings accept only supported size and opacity presets", () => {
             hoverEnabled: true,
             autoExtractMascot: true,
             mascotPath: null,
+            hoverAnimations: [],
             hoverFrames: [],
             hoverFrameDurations: [],
             hoverFrameMs: 110

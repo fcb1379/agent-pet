@@ -73,6 +73,7 @@
                 ? [...new Set(options.imageDataSizes.filter((value) => Number.isInteger(value) && 0 < value))]
                 : [235, 176, 120, 64, 11];
             this.encodeReset = options.encodeReset;
+            this.encodeImageSelect = options.encodeImageSelect;
             this.parseImageDigest = options.parseImageDigest;
             this.encodeTimeSync = options.encodeTimeSync;
             this.encodeDailyMerit = options.encodeDailyMerit;
@@ -111,7 +112,9 @@
             this.meritCharacteristic = null;
             this.latestFrames = [];
             this.latestImage = { revision: "default", data: null };
+            this.latestImages = new Map([[0, this.latestImage]]);
             this.syncedImageRevision = null;
+            this.syncedImageRevisions = new Map();
             this.writeQueue = Promise.resolve();
             this.reconnectTimer = null;
             this.reconnectAttempts = 0;
@@ -266,6 +269,7 @@
             this.imageDigestCharacteristic = null;
             this.meritCharacteristic = null;
             this.syncedImageRevision = null;
+            this.syncedImageRevisions.clear();
             this.writeQueue = Promise.resolve();
         }
 
@@ -314,12 +318,13 @@
             }
             this.reconnectAttempts = 0;
             this.syncedImageRevision = null;
+            this.syncedImageRevisions.clear();
             this.onStatus("connected", this.device.name || "Agent Pet");
             this.writeQueue = Promise.resolve()
                 .then(() => this.flushTime())
                 .then(() => this.flushMerit())
                 .then(() => this.flushLatest())
-                .then(() => this.flushImage());
+                .then(() => this.flushImages());
             await this.writeQueue;
             await this.enableMeritNotifications();
             return true;
@@ -355,6 +360,7 @@
             }
 
             this.latestImage = { revision, md5, data };
+            this.latestImages.set(0, this.latestImage);
             if (this.isConnected())
             {
                 this.writeQueue = this.writeQueue
@@ -363,19 +369,72 @@
             }
         }
 
-        async flushImage()
+        setImages(images)
         {
-            if (!this.isConnected() || this.syncedImageRevision === this.latestImage.revision)
+            for (const image of Array.isArray(images) ? images : [])
+            {
+                const slot = Number(image && image.slot);
+                if (!Number.isInteger(slot) || 0 > slot)
+                {
+                    continue;
+                }
+                const revision = image && "string" === typeof image.revision
+                    ? image.revision
+                    : `slot-${slot}-default`;
+                const data = image && image.data ? Uint8Array.from(image.data) : null;
+                const md5 = image && "string" === typeof image.md5 &&
+                    /^[0-9a-f]{32}$/i.test(image.md5)
+                    ? image.md5.toLowerCase()
+                    : null;
+                const previous = this.latestImages.get(slot);
+                if (previous && revision === previous.revision)
+                {
+                    continue;
+                }
+                const normalized = { slot, revision, md5, data };
+                this.latestImages.set(slot, normalized);
+                if (0 === slot)
+                {
+                    this.latestImage = normalized;
+                }
+            }
+            if (this.isConnected())
+            {
+                this.writeQueue = this.writeQueue
+                    .then(() => this.flushImages())
+                    .catch((error) => this.onStatus("error", error.message));
+            }
+        }
+
+        async flushImages()
+        {
+            const slots = [...this.latestImages.keys()].sort((left, right) => left - right);
+            for (const slot of slots)
+            {
+                await this.flushImage(slot);
+            }
+        }
+
+        async flushImage(slot = 0)
+        {
+            const image = 0 === slot ? this.latestImage : this.latestImages.get(slot);
+            const syncedRevision = 0 === slot
+                ? this.syncedImageRevision
+                : this.syncedImageRevisions.get(slot);
+            if (!this.isConnected() || !image || syncedRevision === image.revision)
             {
                 return;
             }
 
-            const image = this.latestImage;
             let supportsFlowControl = false;
             if (this.imageDigestCharacteristic && "function" === typeof this.parseImageDigest)
             {
                 try
                 {
+                    if ("function" === typeof this.encodeImageSelect)
+                    {
+                        await this.writeImageValueWithResponse(this.encodeImageSelect(slot));
+                    }
                     const digest = this.parseImageDigest(await this.readImageDigestValue());
                     supportsFlowControl = Number.isInteger(digest.received);
                     const sameImage = image.data
@@ -383,7 +442,11 @@
                         : !digest.available;
                     if (sameImage)
                     {
-                        this.syncedImageRevision = image.revision;
+                        this.syncedImageRevisions.set(slot, image.revision);
+                        if (0 === slot)
+                        {
+                            this.syncedImageRevision = image.revision;
+                        }
                         this.onStatus("synced", this.device.name || "Agent Pet");
                         return;
                     }
@@ -404,8 +467,8 @@
             {
                 const dataSize = dataSizes[attempt];
                 const frames = image.data
-                    ? this.encodeImage(image.data, dataSize)
-                    : this.encodeReset();
+                    ? this.encodeImage(image.data, dataSize, slot)
+                    : this.encodeReset(slot);
                 const progressStep = Math.max(1, Math.floor(frames.length / 20));
                 const packetSize = image.data ? dataSize + 9 : frames[0].length;
                 const transferStartedAt = this.now();
@@ -456,6 +519,12 @@
                                         const digest = this.parseImageDigest(
                                             await this.readImageDigestValue()
                                         );
+                                        if (100 <= Number(digest.result))
+                                        {
+                                            throw new Error(
+                                                `Device rejected image slot ${slot} (result ${digest.result})`
+                                            );
+                                        }
                                         if (Number.isInteger(digest.received) &&
                                             requiredBytes <= digest.received)
                                         {
@@ -496,6 +565,12 @@
                                 const digest = this.parseImageDigest(
                                     await this.readImageDigestValue()
                                 );
+                                if (100 <= Number(digest.result))
+                                {
+                                    throw new Error(
+                                        `Device rejected image slot ${slot} (result ${digest.result})`
+                                    );
+                                }
                                 if (image.md5 && digest.available && image.md5 === digest.md5)
                                 {
                                     committed = true;
@@ -539,7 +614,11 @@
                             }
                         }
                     }
-                    this.syncedImageRevision = image.revision;
+                    this.syncedImageRevisions.set(slot, image.revision);
+                    if (0 === slot)
+                    {
+                        this.syncedImageRevision = image.revision;
+                    }
                     const elapsedMs = Math.max(1, this.now() - transferStartedAt);
                     const averageSpeed = formatTransferSpeed((imageByteLength * 1000) / elapsedMs);
                     this.onStatus(
@@ -712,6 +791,7 @@
             this.imageDigestCharacteristic = null;
             this.meritCharacteristic = null;
             this.syncedImageRevision = null;
+            this.syncedImageRevisions.clear();
             this.writeQueue = Promise.resolve();
             if (!silent)
             {
@@ -770,6 +850,7 @@
             this.imageDigestCharacteristic = null;
             this.meritCharacteristic = null;
             this.syncedImageRevision = null;
+            this.syncedImageRevisions.clear();
             this.writeQueue = Promise.resolve();
             if (!this.enabled)
             {

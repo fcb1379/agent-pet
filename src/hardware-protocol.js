@@ -14,13 +14,18 @@ const DAILY_MERIT_MAX_COUNT = 0x7fffffff;
 const MESSAGE_TYPE_SNAPSHOT = 1;
 const MESSAGE_TYPE_WOODEN_FISH = 2;
 const MESSAGE_TYPE_TIME_SYNC = 3;
+const MESSAGE_TYPE_ANIMATION = 4;
 const WOODEN_FISH_ACTION = 1;
+const ANIMATION_ACTION_PLAY = 1;
+const ANIMATION_ACTION_RESTORE = 2;
 const IMAGE_MAGIC_FIRST = 0x41;
 const IMAGE_MAGIC_SECOND = 0x49;
 const IMAGE_COMMAND_BEGIN = 1;
 const IMAGE_COMMAND_DATA = 2;
 const IMAGE_COMMAND_COMMIT = 3;
 const IMAGE_COMMAND_RESET = 4;
+const IMAGE_COMMAND_SELECT = 5;
+const IMAGE_SLOT_COUNT = 5;
 const IMAGE_FORMAT_JPEG = 1;
 const IMAGE_FORMAT_GIF = 2;
 const IMAGE_DATA_SIZE = 235;
@@ -139,18 +144,44 @@ function finalizeImageFrame(frame)
     return frame;
 }
 
-function encodeMascotReset()
+function validImageSlot(slot)
 {
+    return Number.isInteger(slot) && 0 <= slot && IMAGE_SLOT_COUNT > slot;
+}
+
+function encodeMascotSelect(slot)
+{
+    if (!validImageSlot(slot))
+    {
+        throw new Error(`Invalid mascot image slot: ${slot}`);
+    }
     const frame = new Uint8Array(FRAME_SIZE);
 
     frame[0] = IMAGE_MAGIC_FIRST;
     frame[1] = IMAGE_MAGIC_SECOND;
-    frame[2] = 1;
+    frame[2] = 2;
+    frame[3] = IMAGE_COMMAND_SELECT;
+    frame[4] = slot;
+    return finalizeImageFrame(frame);
+}
+
+function encodeMascotReset(slot = 0)
+{
+    if (!validImageSlot(slot))
+    {
+        throw new Error(`Invalid mascot image slot: ${slot}`);
+    }
+    const frame = new Uint8Array(FRAME_SIZE);
+
+    frame[0] = IMAGE_MAGIC_FIRST;
+    frame[1] = IMAGE_MAGIC_SECOND;
+    frame[2] = 2;
     frame[3] = IMAGE_COMMAND_RESET;
+    frame[12] = slot;
     return [finalizeImageFrame(frame)];
 }
 
-function encodeMascotImage(imageBytes, dataSize = IMAGE_DATA_SIZE)
+function encodeMascotImage(imageBytes, dataSize = IMAGE_DATA_SIZE, slot = 0)
 {
     const image = imageBytes instanceof Uint8Array
         ? imageBytes
@@ -163,6 +194,10 @@ function encodeMascotImage(imageBytes, dataSize = IMAGE_DATA_SIZE)
     if (!Number.isInteger(dataSize) || 1 > dataSize || IMAGE_DATA_SIZE < dataSize)
     {
         throw new Error(`Invalid mascot image data size: ${dataSize}`);
+    }
+    if (!validImageSlot(slot))
+    {
+        throw new Error(`Invalid mascot image slot: ${slot}`);
     }
 
     const imageFormat = 6 <= image.length &&
@@ -177,11 +212,12 @@ function encodeMascotImage(imageBytes, dataSize = IMAGE_DATA_SIZE)
 
     begin[0] = IMAGE_MAGIC_FIRST;
     begin[1] = IMAGE_MAGIC_SECOND;
-    begin[2] = 1;
+    begin[2] = 2;
     begin[3] = IMAGE_COMMAND_BEGIN;
     setUint24(begin, 4, image.length);
     begin[7] = imageFormat;
     beginView.setUint32(8, imageCrc, true);
+    begin[12] = slot;
     frames.push(finalizeImageFrame(begin));
 
     for (let offset = 0; offset < image.length; offset += dataSize)
@@ -191,7 +227,7 @@ function encodeMascotImage(imageBytes, dataSize = IMAGE_DATA_SIZE)
 
         frame[0] = IMAGE_MAGIC_FIRST;
         frame[1] = IMAGE_MAGIC_SECOND;
-        frame[2] = 1;
+        frame[2] = 2;
         frame[3] = IMAGE_COMMAND_DATA;
         setUint24(frame, 4, offset);
         frame[7] = length;
@@ -204,11 +240,12 @@ function encodeMascotImage(imageBytes, dataSize = IMAGE_DATA_SIZE)
 
     commit[0] = IMAGE_MAGIC_FIRST;
     commit[1] = IMAGE_MAGIC_SECOND;
-    commit[2] = 1;
+    commit[2] = 2;
     commit[3] = IMAGE_COMMAND_COMMIT;
     setUint24(commit, 4, image.length);
     commit[7] = imageFormat;
     commitView.setUint32(8, imageCrc, true);
+    commit[12] = slot;
     frames.push(finalizeImageFrame(commit));
 
     return frames;
@@ -219,7 +256,7 @@ function parseMascotDigest(value)
         ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
         : Uint8Array.from(value || []);
     const isLegacy = FRAME_SIZE === bytes.length && 1 === bytes[2];
-    const hasFlowStatus = 32 === bytes.length && 2 === bytes[2];
+    const hasFlowStatus = 32 === bytes.length && (2 === bytes[2] || 3 === bytes[2]);
     if ((!isLegacy && !hasFlowStatus) || IMAGE_MAGIC_FIRST !== bytes[0] ||
         IMAGE_MAGIC_SECOND !== bytes[1])
     {
@@ -235,7 +272,7 @@ function parseMascotDigest(value)
         return { available, md5 };
     }
     const statusView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    return {
+    const result = {
         available,
         md5,
         received: statusView.getUint32(20, true),
@@ -243,6 +280,11 @@ function parseMascotDigest(value)
         state: bytes[28],
         result: bytes[29]
     };
+    if (3 === bytes[2])
+    {
+        result.slot = bytes[30];
+    }
+    return result;
 }
 function fnv1a32(value)
 {
@@ -386,6 +428,33 @@ function encodeWoodenFishEvent(sequence)
     return frame;
 }
 
+function encodeAnimationEvent(sequence, action, slot)
+{
+    const normalizedSlot = Number(slot);
+    if ((ANIMATION_ACTION_PLAY === action &&
+         (!validImageSlot(normalizedSlot) || 0 === normalizedSlot)) ||
+        (ANIMATION_ACTION_RESTORE === action && 0 !== normalizedSlot))
+    {
+        throw new Error("Invalid hardware animation event");
+    }
+    const frame = new Uint8Array(FRAME_SIZE);
+    const view = new DataView(frame.buffer);
+
+    frame[0] = 0x41;
+    frame[1] = 0x50;
+    frame[2] = 1;
+    frame[3] = MESSAGE_TYPE_ANIMATION;
+    view.setUint16(4, Number(sequence) & 0xffff, true);
+    frame[6] = 0;
+    frame[7] = 1;
+    frame[8] = 2;
+    frame[9] = action;
+    frame[10] = normalizedSlot;
+    frame[19] = crc8Atm(frame.subarray(0, 19));
+
+    return frame;
+}
+
 function encodeTimeSync(sequence, now = Date.now(), timezoneOffsetMinutes = null)
 {
     const timestamp = now instanceof Date ? now.getTime() : Number(now);
@@ -444,6 +513,18 @@ class HardwareProtocolEncoder
         this.sequence = (this.sequence + 1) & 0xffff;
         return [encodeTimeSync(this.sequence, now, timezoneOffsetMinutes)];
     }
+
+    encodeAnimationPlay(slot)
+    {
+        this.sequence = (this.sequence + 1) & 0xffff;
+        return [encodeAnimationEvent(this.sequence, ANIMATION_ACTION_PLAY, slot)];
+    }
+
+    encodeAnimationRestore()
+    {
+        this.sequence = (this.sequence + 1) & 0xffff;
+        return [encodeAnimationEvent(this.sequence, ANIMATION_ACTION_RESTORE, 0)];
+    }
 }
 
 const HARDWARE_PROTOCOL_API = Object.freeze({
@@ -452,6 +533,8 @@ const HARDWARE_PROTOCOL_API = Object.freeze({
     IMAGE_COMMAND_COMMIT,
     IMAGE_COMMAND_DATA,
     IMAGE_COMMAND_RESET,
+    IMAGE_COMMAND_SELECT,
+    IMAGE_SLOT_COUNT,
     IMAGE_DATA_SIZE,
     IMAGE_DATA_SIZES,
     IMAGE_PACKET_OVERHEAD,
@@ -465,8 +548,11 @@ const HARDWARE_PROTOCOL_API = Object.freeze({
     MAX_MASCOT_IMAGE_BYTES,
     MESSAGE_TYPE_SNAPSHOT,
     MESSAGE_TYPE_TIME_SYNC,
+    MESSAGE_TYPE_ANIMATION,
     MESSAGE_TYPE_WOODEN_FISH,
     WOODEN_FISH_ACTION,
+    ANIMATION_ACTION_PLAY,
+    ANIMATION_ACTION_RESTORE,
     SERVICE_UUID,
     STATUS_RX_UUID,
     STATE_CODES,
@@ -477,6 +563,8 @@ const HARDWARE_PROTOCOL_API = Object.freeze({
     encodeDailyMerit,
     encodeMascotImage,
     encodeMascotReset,
+    encodeMascotSelect,
+    encodeAnimationEvent,
     parseMascotDigest,
     parseDailyMerit,
     encodePayload,

@@ -7,6 +7,7 @@ const os = require("node:os");
 const path = require("node:path");
 const sharp = require("sharp");
 const {
+    encodeHardwareMascotGifFrames,
     findHardwareMascotSource,
     firmwareJpegInfo,
     HARDWARE_MASCOT_GIF_MAX_BYTES,
@@ -16,6 +17,36 @@ const {
     isFirmwareCompatibleMascot,
     prepareHardwareMascot
 } = require("../src/hardware-image");
+
+test("legacy PNG hover frames migrate into a hardware GIF", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pet-legacy-hover-"));
+
+    try
+    {
+        const framePaths = [];
+        for (const [index, colour] of [[0, "#ff3322"], [1, "#2277ff"]])
+        {
+            const framePath = path.join(directory, `frame-${index}.png`);
+            await sharp({
+                create: { width: 24, height: 18, channels: 4, background: colour }
+            }).png().toFile(framePath);
+            framePaths.push(framePath);
+        }
+        const image = await encodeHardwareMascotGifFrames(framePaths, [60, 120]);
+        const metadata = await sharp(image, { animated: true }).metadata();
+
+        assert.equal(image.subarray(0, 6).toString("ascii"), "GIF89a");
+        assert.equal(metadata.pages, 2);
+        assert.equal(metadata.width, HARDWARE_MASCOT_GIF_SIZE);
+        assert.deepEqual(metadata.delay, [60, 120]);
+        assert.ok(image.length <= HARDWARE_MASCOT_GIF_MAX_BYTES);
+    }
+    finally
+    {
+        sharp.cache(false);
+        await fs.promises.rm(directory, { recursive: true, force: true });
+    }
+});
 
 test("hardware mascot is persisted as a bounded 192px JPEG", async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pet-hardware-image-"));

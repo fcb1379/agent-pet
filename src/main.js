@@ -22,6 +22,7 @@ const { ApprovalStore } = require("./approval-store");
 const { KeyboardActivityMonitor } = require("./keyboard-activity");
 const { importImageFiles, versionedImageFileUrl } = require("./custom-assets");
 const {
+    encodeHardwareMascotGifFrames,
     findHardwareMascotSource,
     HARDWARE_MASCOT_MAX_BYTES,
     isFirmwareCompatibleMascot,
@@ -134,7 +135,13 @@ function publicWindowSettings()
         animation: {
             ...settings.animation,
             mascotUrl: imageFileUrl(settings.animation.mascotPath),
-            hoverFrameUrls: settings.animation.hoverFrames.map(imageFileUrl).filter(Boolean)
+            hoverFrameUrls: settings.animation.hoverFrames.map(imageFileUrl).filter(Boolean),
+            hoverAnimations: settings.animation.hoverAnimations.map((animation, index) => ({
+                id: animation.id,
+                slot: index + 1,
+                frameUrls: animation.framePaths.map(imageFileUrl).filter(Boolean),
+                frameDurations: animation.frameDurations
+            }))
         },
         resources: {
             ...settings.resources,
@@ -196,6 +203,73 @@ async function hardwareMascotPayload()
         md5: crypto.createHash("md5").update(imageData).digest("hex"),
         data: Array.from(imageData)
     };
+}
+
+async function hardwareMascotPayloads()
+{
+    const images = [{ slot: 0, ...await hardwareMascotPayload() }];
+
+    for (let index = 0; index < 4; index++)
+    {
+        const animation = settings.animation.hoverAnimations[index];
+        const hardwarePath = animation && animation.hardwarePath;
+        if (!hardwarePath || !fs.existsSync(hardwarePath))
+        {
+            images.push({ slot: index + 1, revision: `slot-${index + 1}-empty`, data: null });
+            continue;
+        }
+        const stat = fs.statSync(hardwarePath);
+        if (!stat.isFile() || 4 > stat.size || HARDWARE_MASCOT_MAX_BYTES < stat.size ||
+            !await isFirmwareCompatibleMascot(hardwarePath))
+        {
+            throw new Error(`表情 ${index + 1} 无法转换为硬件可播放 GIF`);
+        }
+        const imageData = fs.readFileSync(hardwarePath);
+        images.push({
+            slot: index + 1,
+            revision: `${stat.size}:${Math.round(stat.mtimeMs)}`,
+            md5: crypto.createHash("md5").update(imageData).digest("hex"),
+            data: Array.from(imageData)
+        });
+    }
+
+    return images;
+}
+
+async function migrateLegacyHoverAnimation()
+{
+    const animation = settings.animation;
+    if (0 < animation.hoverAnimations.length || 2 > animation.hoverFrames.length)
+    {
+        return;
+    }
+    const targetDirectory = path.dirname(animation.hoverFrames[0]);
+    const hardwarePath = path.join(targetDirectory, "hardware-v2.gif");
+    if (!fs.existsSync(hardwarePath) || !await isFirmwareCompatibleMascot(hardwarePath))
+    {
+        const temporaryPath = `${hardwarePath}.tmp`;
+        fs.writeFileSync(
+            temporaryPath,
+            await encodeHardwareMascotGifFrames(
+                animation.hoverFrames,
+                animation.hoverFrameDurations)
+        );
+        if (fs.existsSync(hardwarePath))
+        {
+            fs.unlinkSync(hardwarePath);
+        }
+        fs.renameSync(temporaryPath, hardwarePath);
+    }
+    settings = settingsStore.update({
+        animation: {
+            hoverAnimations: [{
+                id: "legacy-hover",
+                framePaths: animation.hoverFrames,
+                frameDurations: animation.hoverFrameDurations,
+                hardwarePath
+            }]
+        }
+    });
 }
 function loginExecutable()
 {
@@ -609,7 +683,12 @@ async function chooseHoverFrames()
     try
     {
         const hoverFrames = importImageFiles(result.filePaths, customAssetDirectory(), "hover");
-        updateSettings({ animation: { hoverFrames, hoverFrameDurations: [], hoverEnabled: true } });
+        updateSettings({ animation: {
+            hoverAnimations: [],
+            hoverFrames,
+            hoverFrameDurations: [],
+            hoverEnabled: true
+        } });
     }
     catch (error)
     {
@@ -619,8 +698,8 @@ async function chooseHoverFrames()
 async function chooseStickerAnimation()
 {
     const result = await dialog.showOpenDialog(mainWindow, {
-        title: "选择 GIF 动画",
-        properties: ["openFile"],
+        title: "选择最多 4 组 GIF 表情",
+        properties: ["openFile", "multiSelections"],
         filters: [{ name: "GIF 动画", extensions: ["gif"] }]
     });
     if (result.canceled)
@@ -630,30 +709,44 @@ async function chooseStickerAnimation()
 
     try
     {
-        const imported = await importStickerAnimation(result.filePaths[0], customAssetDirectory());
-        const averageDuration = imported.frameDurations.reduce((total, duration) => total + duration, 0)
-            / imported.frameDurations.length;
+        const selectedPaths = result.filePaths.slice(0, 4);
+        const importedAnimations = [];
+        for (let index = 0; index < selectedPaths.length; index++)
+        {
+            const imported = await importStickerAnimation(
+                selectedPaths[index],
+                customAssetDirectory());
+            importedAnimations.push({
+                id: path.basename(selectedPaths[index]),
+                framePaths: imported.framePaths,
+                frameDurations: imported.frameDurations,
+                hardwarePath: imported.hardwarePath
+            });
+        }
+        const firstAnimation = importedAnimations[0];
+        const averageDuration = firstAnimation.frameDurations.reduce(
+            (total, duration) => total + duration,
+            0) / firstAnimation.frameDurations.length;
         updateSettings({
             animation: {
-                hoverFrames: imported.framePaths,
-                hoverFrameDurations: imported.frameDurations,
+                hoverAnimations: importedAnimations,
+                hoverFrames: firstAnimation.framePaths,
+                hoverFrameDurations: firstAnimation.frameDurations,
                 hoverFrameMs: Math.max(60, Math.min(500, Math.round(averageDuration))),
                 hoverEnabled: true
             }
         });
         await dialog.showMessageBox(mainWindow, {
             type: "info",
-            title: "GIF 动画导入完成",
-            message: `已导入 ${imported.frameCount} 帧 GIF 动画`,
-            detail: imported.sourceFrameCount > imported.frameCount
-                ? `原始 ${imported.sourceFrameCount} 帧已等时长采样为 ${imported.frameCount} 帧。`
-                : "已保留原始逐帧播放时长，可通过“悬停帧速度”整体调速。",
+            title: "GIF 表情导入完成",
+            message: `已导入 ${importedAnimations.length} 组 GIF 表情`,
+            detail: "连接设备时会预同步到独立槽位，悬停随机触发时设备将播放同一组动画。",
             buttons: ["知道了"]
         });
     }
     catch (error)
     {
-        dialog.showErrorBox("无法导入 GIF 动画", error.message);
+        dialog.showErrorBox("无法导入 GIF 表情", error.message);
     }
 }
 
@@ -883,8 +976,13 @@ function rebuildTrayMenu()
                 },
                 {
                     label: "清除悬停动画帧",
-                    enabled: 0 < settings.animation.hoverFrames.length,
-                    click: () => updateSettings({ animation: { hoverFrames: [], hoverFrameDurations: [] } })
+                    enabled: 0 < settings.animation.hoverFrames.length ||
+                        0 < settings.animation.hoverAnimations.length,
+                    click: () => updateSettings({ animation: {
+                        hoverAnimations: [],
+                        hoverFrames: [],
+                        hoverFrameDurations: []
+                    } })
                 }
             ]
         },
@@ -1134,7 +1232,7 @@ else
         }
     });
 
-    app.whenReady().then(() => {
+    app.whenReady().then(async () => {
         if ("darwin" === process.platform && app.dock)
         {
             app.dock.hide();
@@ -1143,6 +1241,14 @@ else
         fs.mkdirSync(approvalDirectory(), { recursive: true });
         settingsStore = new SettingsStore(path.join(app.getPath("userData"), "settings.json"));
         settings = settingsStore.load();
+        try
+        {
+            await migrateLegacyHoverAnimation();
+        }
+        catch (error)
+        {
+            console.warn(`Legacy hover animation migration failed: ${error.message}`);
+        }
 
         createWindow();
         createTray();
@@ -1189,6 +1295,7 @@ else
             }
         });
         ipcMain.handle("hardware-mascot-image", () => hardwareMascotPayload());
+        ipcMain.handle("hardware-mascot-images", () => hardwareMascotPayloads());
         ipcMain.handle("dismiss-session", (_event, payload) => {
             if (payload && "object" === typeof payload)
             {

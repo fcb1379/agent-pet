@@ -9,6 +9,7 @@ const DEFAULT_ANIMATION = Object.freeze({
     hoverEnabled: true,
     autoExtractMascot: true,
     mascotPath: null,
+    hoverAnimations: [],
     hoverFrames: [],
     hoverFrameDurations: [],
     hoverFrameMs: 110
@@ -68,12 +69,38 @@ function normalizeAnimation(value = {})
             .slice(0, hoverFrames.length)
             .map((item) => Math.max(20, Math.min(1000, Math.round(Number(item) || DEFAULT_ANIMATION.hoverFrameMs))))
         : [];
+    const hoverAnimations = (Array.isArray(value.hoverAnimations) ? value.hoverAnimations : [])
+        .slice(0, 4)
+        .map((animation, index) => {
+            const framePaths = Array.isArray(animation && animation.framePaths)
+                ? animation.framePaths
+                    .filter((item) => "string" === typeof item && 0 < item.length)
+                    .slice(0, 48)
+                : [];
+            const frameDurations = Array.isArray(animation && animation.frameDurations)
+                ? animation.frameDurations.slice(0, framePaths.length).map((item) =>
+                    Math.max(20, Math.min(1000, Math.round(Number(item) || DEFAULT_ANIMATION.hoverFrameMs))))
+                : [];
+            return {
+                id: "string" === typeof animation?.id && 0 < animation.id.length
+                    ? animation.id
+                    : `expression-${index + 1}`,
+                framePaths,
+                frameDurations,
+                hardwarePath: "string" === typeof animation?.hardwarePath &&
+                    0 < animation.hardwarePath.length
+                    ? animation.hardwarePath
+                    : null
+            };
+        })
+        .filter((animation) => 0 < animation.framePaths.length);
 
     return {
         style,
         hoverEnabled: false !== value.hoverEnabled,
         autoExtractMascot: false !== value.autoExtractMascot,
         mascotPath: "string" === typeof value.mascotPath && 0 < value.mascotPath.length ? value.mascotPath : null,
+        hoverAnimations,
         hoverFrames,
         hoverFrameDurations,
         hoverFrameMs: Number.isFinite(frameMs) && 60 <= frameMs && 500 >= frameMs ? Math.round(frameMs) : DEFAULT_ANIMATION.hoverFrameMs

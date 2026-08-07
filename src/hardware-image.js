@@ -285,6 +285,86 @@ async function renderHardwareGifFrames(sourcePath, framePlan, canvasSize)
     return Buffer.concat(frames);
 }
 
+async function renderHardwareGifFrameFiles(framePaths, framePlan, canvasSize)
+{
+    const frames = [];
+
+    for (const frame of framePlan)
+    {
+        const pixels = await sharp(framePaths[frame.sourceIndex], {
+            failOn: "warning",
+            limitInputPixels: GIF_SOURCE_PIXEL_LIMIT
+        })
+            .rotate()
+            .resize(canvasSize, canvasSize, {
+                fit: "contain",
+                background: HARDWARE_MASCOT_BACKGROUND,
+                withoutEnlargement: false
+            })
+            .ensureAlpha()
+            .raw()
+            .toBuffer();
+        frames.push(pixels);
+    }
+
+    return Buffer.concat(frames);
+}
+
+async function encodeHardwareMascotGifFrames(framePaths, frameDelays = [])
+{
+    const frames = Array.isArray(framePaths)
+        ? framePaths.filter((framePath) =>
+            "string" === typeof framePath && fs.existsSync(framePath))
+        : [];
+    if (2 > frames.length)
+    {
+        throw new Error("旧版悬停动画至少需要 2 帧才能转换");
+    }
+    const delays = frames.map((_framePath, index) => boundedGifDelay(frameDelays[index]));
+    const totalDurationMs = delays.reduce((total, delay) => total + delay, 0);
+    const playbackFrameLimit = Math.max(2, Math.floor(totalDurationMs / GIF_TARGET_MIN_DELAY_MS));
+    const frameTargets = [playbackFrameLimit, ...GIF_FRAME_TARGETS]
+        .map((target) => Math.min(frames.length, target))
+        .filter((target, index, values) => 2 <= target && values.indexOf(target) === index);
+
+    for (const targetFrameCount of frameTargets)
+    {
+        const framePlan = buildHardwareGifFramePlan(
+            delays,
+            frames.length,
+            targetFrameCount
+        );
+        for (const canvasSize of GIF_CANVAS_SIZES)
+        {
+            const renderedFrames = await renderHardwareGifFrameFiles(
+                frames,
+                framePlan,
+                canvasSize
+            );
+            const image = await encodeHardwareGifCandidate(
+                renderedFrames,
+                {
+                    raw: {
+                        width: canvasSize,
+                        height: canvasSize * framePlan.length,
+                        channels: 4,
+                        pageHeight: canvasSize
+                    }
+                },
+                canvasSize,
+                framePlan.map((frame) => frame.delay),
+                0
+            );
+            if (image)
+            {
+                return image;
+            }
+        }
+    }
+
+    throw new Error("旧版悬停动画无法转换为硬件可播放 GIF");
+}
+
 async function encodeHardwareMascotGif(sourcePath)
 {
     if ("string" !== typeof sourcePath || !fs.existsSync(sourcePath))
@@ -529,6 +609,7 @@ async function findHardwareMascotSource(hardwarePath)
 module.exports = {
     encodeHardwareMascot,
     encodeHardwareMascotGif,
+    encodeHardwareMascotGifFrames,
     findHardwareMascotSource,
     firmwareJpegInfo,
     HARDWARE_MASCOT_BACKGROUND,

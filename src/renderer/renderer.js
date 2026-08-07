@@ -47,8 +47,9 @@ let latestResources = null;
 let windowSettings = { hardware: { enabled: false }, resources: { enabled: true, cpu: true, gpu: true, memory: true, network: true } };
 let positionAdjusting = false;
 let sessionDetailsOpen = false;
-let animationSettings = { style: "classic", hoverEnabled: true, mascotUrl: null, hoverFrameUrls: [], hoverFrameDurations: [], hoverFrameMs: 110 };
+let animationSettings = { style: "classic", hoverEnabled: true, mascotUrl: null, hoverAnimations: [], hoverFrameUrls: [], hoverFrameDurations: [], hoverFrameMs: 110 };
 let hoverTimer = null;
+let hardwareHoverActive = false;
 let woodenFishTimer = null;
 let meritCount = 0;
 let lastWoodenFishHitAt = 0;
@@ -69,6 +70,7 @@ const hardwareClient = new window.AgentPetBleClient({
     imageDataSizes: hardwareProtocol.IMAGE_DATA_SIZES,
     enabled: false,
     encodeReset: hardwareProtocol.encodeMascotReset,
+    encodeImageSelect: hardwareProtocol.encodeMascotSelect,
     parseImageDigest: hardwareProtocol.parseMascotDigest,
     encodeDailyMerit: hardwareProtocol.encodeDailyMerit,
     parseDailyMerit: hardwareProtocol.parseDailyMerit,
@@ -94,6 +96,10 @@ const hardwareClient = new window.AgentPetBleClient({
         else
         {
             hardwareButton.setAttribute("aria-label", `图片传输 ${presentation.percent}%`);
+        }
+        if ("error" === status)
+        {
+            hardwareButton.setAttribute("aria-label", `BLE 错误：${detail || "未知错误"}`);
         }
     }
 });
@@ -306,6 +312,11 @@ function cancelHoverAnimation()
         document.body.classList.remove(`hover-action-${action}`);
     }
     mascot.src = animationSettings.mascotUrl || defaultMascotUrl;
+    if (hardwareHoverActive)
+    {
+        hardwareHoverActive = false;
+        void hardwareClient.sendEvent(hardwareProtocolEncoder.encodeAnimationRestore());
+    }
 }
 
 function playBuiltInHoverAnimation()
@@ -318,11 +329,21 @@ function playBuiltInHoverAnimation()
     }, 900);
 }
 
-function playCustomHoverFrames()
+function playCustomHoverFrames(animation = null)
 {
-    const frames = animationSettings.hoverFrameUrls;
-    const durations = animationSettings.hoverFrameDurations;
+    const frames = animation && Array.isArray(animation.frameUrls)
+        ? animation.frameUrls
+        : animationSettings.hoverFrameUrls;
+    const durations = animation && Array.isArray(animation.frameDurations)
+        ? animation.frameDurations
+        : animationSettings.hoverFrameDurations;
     let index = 0;
+    if (animation && Number.isInteger(animation.slot) && hardwareEnabled)
+    {
+        hardwareHoverActive = true;
+        void hardwareClient.sendEvent(
+            hardwareProtocolEncoder.encodeAnimationPlay(animation.slot));
+    }
     if (1 === frames.length)
     {
         mascot.src = frames[0];
@@ -370,7 +391,15 @@ function playRandomHoverAnimation()
         return;
     }
 
-    if (0 < animationSettings.hoverFrameUrls.length && 0.65 > Math.random())
+    const animations = Array.isArray(animationSettings.hoverAnimations)
+        ? animationSettings.hoverAnimations.filter((animation) =>
+            Array.isArray(animation.frameUrls) && 0 < animation.frameUrls.length)
+        : [];
+    if (0 < animations.length)
+    {
+        playCustomHoverFrames(animations[Math.floor(Math.random() * animations.length)]);
+    }
+    else if (0 < animationSettings.hoverFrameUrls.length && 0.65 > Math.random())
     {
         playCustomHoverFrames();
     }
@@ -390,10 +419,12 @@ async function syncHardwareMascot()
 
     try
     {
-        const image = await window.agentPet.getHardwareMascotImage();
+        const images = "function" === typeof window.agentPet.getHardwareMascotImages
+            ? await window.agentPet.getHardwareMascotImages()
+            : [await window.agentPet.getHardwareMascotImage()];
         if (hardwareEnabled && request === hardwareImageRequest)
         {
-            hardwareClient.setImage(image);
+            hardwareClient.setImages(images);
         }
     }
     catch (error)

@@ -6,6 +6,7 @@ const path = require("node:path");
 const sharp = require("sharp");
 const UPNG = require("upng-js");
 const { MAX_ASSET_BYTES, MAX_HOVER_FRAMES } = require("./custom-assets");
+const { encodeHardwareMascotGif } = require("./hardware-image");
 
 const SUPPORTED_STICKER_EXTENSIONS = new Set([".gif", ".png", ".webp"]);
 const MAX_DECODED_PIXELS = 64 * 1024 * 1024;
@@ -13,7 +14,7 @@ const MAX_CANVAS_SIZE = 512;
 const MIN_FRAME_DELAY_MS = 20;
 const MAX_FRAME_DELAY_MS = 1000;
 const DEFAULT_FRAME_DELAY_MS = 100;
-const CACHE_VERSION = "wechat-sticker-v1";
+const CACHE_VERSION = "wechat-sticker-v2-hardware";
 
 function boundedDelay(value)
 {
@@ -137,9 +138,13 @@ function loadCachedImport(targetDirectory)
     {
         const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
         const framePaths = manifest.frameFiles.map((fileName) => path.join(targetDirectory, fileName));
-        if (framePaths.every((framePath) => fs.existsSync(framePath)))
+        const hardwarePath = manifest.hardwareFile
+            ? path.join(targetDirectory, manifest.hardwareFile)
+            : null;
+        if (framePaths.every((framePath) => fs.existsSync(framePath)) &&
+            (!hardwarePath || fs.existsSync(hardwarePath)))
         {
-            return { ...manifest, framePaths };
+            return { ...manifest, framePaths, hardwarePath };
         }
     }
     catch (_error)
@@ -215,13 +220,22 @@ async function importStickerAnimation(filePath, assetDirectory)
             frameFiles.push(fileName);
         }
 
+        const hardwareFile = ".gif" === extension ? "hardware.gif" : null;
+        if (hardwareFile)
+        {
+            fs.writeFileSync(
+                path.join(temporaryDirectory, hardwareFile),
+                await encodeHardwareMascotGif(resolvedPath)
+            );
+        }
         const manifest = {
             format: animation.format,
             sourceFrameCount: pageCount,
             frameCount: frameFiles.length,
             frameDurations: framePlan.map((frame) => frame.duration),
             frameFiles,
-            canvasSize
+            canvasSize,
+            hardwareFile
         };
         fs.writeFileSync(
             path.join(temporaryDirectory, "manifest.json"),
@@ -236,7 +250,8 @@ async function importStickerAnimation(filePath, assetDirectory)
         fs.renameSync(temporaryDirectory, targetDirectory);
         return {
             ...manifest,
-            framePaths: frameFiles.map((fileName) => path.join(targetDirectory, fileName))
+            framePaths: frameFiles.map((fileName) => path.join(targetDirectory, fileName)),
+            hardwarePath: hardwareFile ? path.join(targetDirectory, hardwareFile) : null
         };
     }
     catch (error)

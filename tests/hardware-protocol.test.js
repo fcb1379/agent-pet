@@ -9,6 +9,8 @@ const {
     encodeDailyMerit,
     encodeMascotImage,
     encodeMascotReset,
+    encodeMascotSelect,
+    encodeAnimationEvent,
     parseMascotDigest,
     parseDailyMerit,
     encodeSnapshot,
@@ -82,6 +84,21 @@ test("default mascot reset is one CRC-protected frame", () => {
     assert.equal(frame[3], 4);
     assert.equal(frame[19], crc8Atm(frame.subarray(0, 19)));
 });
+test("expression images address an independent persistent slot", () => {
+    const image = Uint8Array.from([
+        0x47, 0x49, 0x46, 0x38, 0x39, 0x61,
+        0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0x3b
+    ]);
+    const frames = encodeMascotImage(image, 11, 3);
+    const select = encodeMascotSelect(3);
+
+    assert.equal(frames[0][2], 2);
+    assert.equal(frames[0][12], 3);
+    assert.equal(frames.at(-1)[12], 3);
+    assert.equal(select[3], 5);
+    assert.equal(select[4], 3);
+    assert.equal(select[19], crc8Atm(select.subarray(0, 19)));
+});
 test("mascot digest response exposes the persistent device image MD5", () => {
     const response = Uint8Array.from([
         0x41, 0x49, 0x01, 0x01,
@@ -112,6 +129,13 @@ test("mascot digest v2 exposes firmware-processed transfer progress", () => {
         result: 0
     });
 });
+test("mascot digest v3 identifies the selected expression slot", () => {
+    const response = new Uint8Array(32);
+    response.set([0x41, 0x49, 0x03, 0x00]);
+    response[30] = 4;
+
+    assert.equal(parseMascotDigest(response).slot, 4);
+});
 test("idle snapshot matches the firmware golden frame", () => {
     const [frame] = encodeSnapshot({ state: "idle", sessions: [] }, 0x1234, 0);
     assert.equal(Buffer.from(frame).toString("hex"), "4150010134120001060000000000000000000018");
@@ -130,6 +154,15 @@ test("wooden fish click is encoded as a single deduplicated event frame", () => 
     assert.equal(frame[7], 1);
     assert.equal(frame[8], 1);
     assert.equal(frame[9], 1);
+    assert.equal(frame[19], crc8Atm(frame.subarray(0, 19)));
+});
+test("expression playback is encoded as a lightweight status event", () => {
+    const frame = encodeAnimationEvent(0x1234, 1, 2);
+
+    assert.equal(frame[3], 4);
+    assert.equal(frame[8], 2);
+    assert.equal(frame[9], 1);
+    assert.equal(frame[10], 2);
     assert.equal(frame[19], crc8Atm(frame.subarray(0, 19)));
 });
 
