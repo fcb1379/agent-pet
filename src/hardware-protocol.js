@@ -18,6 +18,8 @@ const MESSAGE_TYPE_ANIMATION = 4;
 const WOODEN_FISH_ACTION = 1;
 const ANIMATION_ACTION_PLAY = 1;
 const ANIMATION_ACTION_RESTORE = 2;
+const ANIMATION_ACTION_TYPING_START = 3;
+const ANIMATION_ACTION_TYPING_STOP = 4;
 const IMAGE_MAGIC_FIRST = 0x41;
 const IMAGE_MAGIC_SECOND = 0x49;
 const IMAGE_COMMAND_BEGIN = 1;
@@ -431,9 +433,15 @@ function encodeWoodenFishEvent(sequence)
 function encodeAnimationEvent(sequence, action, slot)
 {
     const normalizedSlot = Number(slot);
+    const isTypingAction = ANIMATION_ACTION_TYPING_START === action ||
+        ANIMATION_ACTION_TYPING_STOP === action;
     if ((ANIMATION_ACTION_PLAY === action &&
          (!validImageSlot(normalizedSlot) || 0 === normalizedSlot)) ||
-        (ANIMATION_ACTION_RESTORE === action && 0 !== normalizedSlot))
+        (ANIMATION_ACTION_RESTORE === action && 0 !== normalizedSlot) ||
+        (isTypingAction && 0 !== normalizedSlot) ||
+        (!isTypingAction &&
+         ANIMATION_ACTION_PLAY !== action &&
+         ANIMATION_ACTION_RESTORE !== action))
     {
         throw new Error("Invalid hardware animation event");
     }
@@ -525,6 +533,18 @@ class HardwareProtocolEncoder
         this.sequence = (this.sequence + 1) & 0xffff;
         return [encodeAnimationEvent(this.sequence, ANIMATION_ACTION_RESTORE, 0)];
     }
+
+    encodeTypingStart()
+    {
+        this.sequence = (this.sequence + 1) & 0xffff;
+        return [encodeAnimationEvent(this.sequence, ANIMATION_ACTION_TYPING_START, 0)];
+    }
+
+    encodeTypingStop()
+    {
+        this.sequence = (this.sequence + 1) & 0xffff;
+        return [encodeAnimationEvent(this.sequence, ANIMATION_ACTION_TYPING_STOP, 0)];
+    }
 }
 
 const HARDWARE_PROTOCOL_API = Object.freeze({
@@ -553,6 +573,8 @@ const HARDWARE_PROTOCOL_API = Object.freeze({
     WOODEN_FISH_ACTION,
     ANIMATION_ACTION_PLAY,
     ANIMATION_ACTION_RESTORE,
+    ANIMATION_ACTION_TYPING_START,
+    ANIMATION_ACTION_TYPING_STOP,
     SERVICE_UUID,
     STATUS_RX_UUID,
     STATE_CODES,

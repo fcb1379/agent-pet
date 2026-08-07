@@ -46,6 +46,33 @@ test("disabled BLE client stays silent until hardware integration is enabled", a
     assert.deepEqual(statuses, []);
 });
 
+test("BLE client retains typing state while disconnected and flushes it on reconnect", async () => {
+    const writes = [];
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        encodeImage: () => [],
+        encodeReset: () => []
+    });
+
+    assert.equal(
+        await client.setTypingAnimation([Uint8Array.from([4, 3, 0])]),
+        false
+    );
+    client.device = { name: "test", gatt: { connected: true } };
+    client.characteristic = {
+        writeValueWithResponse: async (frame) => writes.push(Array.from(frame))
+    };
+    client.imageCharacteristic = { writeValueWithResponse: async () => {} };
+
+    await client.flushTypingAnimation();
+    assert.deepEqual(writes, [[4, 3, 0]]);
+
+    await client.setTypingAnimation([Uint8Array.from([4, 4, 0])]);
+    assert.deepEqual(writes, [[4, 3, 0], [4, 4, 0]]);
+});
+
 function connectedDevice(name = "AgentPet-HS52")
 {
     const statusCharacteristic = { writeValueWithResponse: async () => {} };

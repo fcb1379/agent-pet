@@ -166,6 +166,20 @@ test("expression playback is encoded as a lightweight status event", () => {
     assert.equal(frame[19], crc8Atm(frame.subarray(0, 19)));
 });
 
+test("typing activity uses independent start and stop animation events", () => {
+    const encoder = new HardwareProtocolEncoder(0x2200);
+    const start = encoder.encodeTypingStart()[0];
+    const stop = encoder.encodeTypingStop()[0];
+
+    assert.equal(start[3], 4);
+    assert.equal(start[9], 3);
+    assert.equal(start[10], 0);
+    assert.equal(stop[9], 4);
+    assert.equal(stop[10], 0);
+    assert.equal(start[19], crc8Atm(start.subarray(0, 19)));
+    assert.equal(stop[19], crc8Atm(stop.subarray(0, 19)));
+});
+
 test("time sync encodes UTC epoch and signed timezone in one frame", () => {
     const frame = encodeTimeSync(0x2468, Date.parse("2026-08-04T03:02:01Z"), 480);
     const view = new DataView(frame.buffer);

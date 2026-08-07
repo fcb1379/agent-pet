@@ -50,6 +50,7 @@ let sessionDetailsOpen = false;
 let animationSettings = { style: "classic", hoverEnabled: true, mascotUrl: null, hoverAnimations: [], hoverFrameUrls: [], hoverFrameDurations: [], hoverFrameMs: 110 };
 let hoverTimer = null;
 let hardwareHoverActive = false;
+let hardwareTypingActive = null;
 let woodenFishTimer = null;
 let meritCount = 0;
 let lastWoodenFishHitAt = 0;
@@ -128,6 +129,7 @@ function applyState(snapshot)
     }
     document.body.classList.add(`state-${state}`);
     document.body.classList.toggle("is-typing", canAnimateTyping);
+    syncHardwareTypingAnimation(canAnimateTyping);
 
     statusTitle.textContent = positionAdjusting
         ? "拖动到想要的位置"
@@ -446,6 +448,7 @@ function applyHardwareSettings(settings)
     if (!hardwareEnabled)
     {
         hardwareImageRequest++;
+        hardwareTypingActive = null;
         return;
     }
     if (changed)
@@ -454,7 +457,35 @@ function applyHardwareSettings(settings)
             hardwareProtocolEncoder.encode(latestSnapshot).map((frame) => Array.from(frame))
         );
     }
+    syncHardwareTypingAnimation();
     void syncHardwareMascot();
+}
+
+function syncHardwareTypingAnimation(active = null)
+{
+    const state = Object.hasOwn(STATE_PRESENTATION, latestSnapshot.state)
+        ? latestSnapshot.state
+        : "idle";
+    const shouldAnimate = "boolean" === typeof active
+        ? active
+        : typingActive && ("idle" === state || "running" === state);
+
+    if (!hardwareEnabled)
+    {
+        hardwareTypingActive = null;
+        return;
+    }
+    if (hardwareTypingActive === shouldAnimate)
+    {
+        return;
+    }
+
+    hardwareTypingActive = shouldAnimate;
+    void hardwareClient.setTypingAnimation(
+        shouldAnimate
+            ? hardwareProtocolEncoder.encodeTypingStart()
+            : hardwareProtocolEncoder.encodeTypingStop()
+    );
 }
 function applyAnimationSettings(settings)
 {

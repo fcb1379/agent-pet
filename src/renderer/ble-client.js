@@ -111,6 +111,7 @@
             this.imageDigestCharacteristic = null;
             this.meritCharacteristic = null;
             this.latestFrames = [];
+            this.latestTypingFrames = [];
             this.latestImage = { revision: "default", data: null };
             this.latestImages = new Map([[0, this.latestImage]]);
             this.syncedImageRevision = null;
@@ -324,6 +325,7 @@
                 .then(() => this.flushTime())
                 .then(() => this.flushMerit())
                 .then(() => this.flushLatest())
+                .then(() => this.flushTypingAnimation())
                 .then(() => this.flushImages());
             await this.writeQueue;
             await this.enableMeritNotifications();
@@ -651,6 +653,42 @@
 
             throw lastError || new Error("Mascot image transfer failed");
         }
+        setTypingAnimation(frames)
+        {
+            this.latestTypingFrames = Array.isArray(frames)
+                ? frames.map((frame) => Uint8Array.from(frame))
+                : [];
+            if (!this.isConnected())
+            {
+                return Promise.resolve(false);
+            }
+
+            this.writeQueue = this.writeQueue
+                .then(() => this.flushTypingAnimation())
+                .then(() => {
+                    this.onStatus("synced", this.device.name || "Agent Pet");
+                    return true;
+                })
+                .catch((error) => {
+                    this.onStatus("error", error.message);
+                    return false;
+                });
+            return this.writeQueue;
+        }
+
+        async flushTypingAnimation()
+        {
+            if (!this.isConnected())
+            {
+                return;
+            }
+            const frames = this.latestTypingFrames.map((frame) => frame.slice());
+            for (const frame of frames)
+            {
+                await this.characteristic.writeValueWithResponse(frame);
+            }
+        }
+
         sendEvent(frames)
         {
             const eventFrames = Array.isArray(frames)
