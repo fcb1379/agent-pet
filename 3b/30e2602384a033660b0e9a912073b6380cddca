@@ -1,0 +1,63 @@
+tests/hardware-protocol.test.js
+  s_285146986cdcdb::t_f8021a62b8a0d2 12-13,87-101,132-138,159-165
+  s_66f621550653f0::t_5861aef335f1ae 166-167
+src/hardware-protocol.js
+  s_285146986cdcdb::t_ebc98556f78a09 275,283-287
+  s_285146986cdcdb::t_9734711071f935 17,19-20,27-28,147,149-157,162-178,180,184,198-201,215,220,230,243,248,259,431-457,516-527,536-537,551,554-555,566-567
+src/sticker-importer.js
+  s_285146986cdcdb::t_8da4ddd3ddfcf3 9,17,141-144,147,237-238,253
+  s_285146986cdcdb::t_ebc98556f78a09 145,223-230,254
+src/main.js
+  s_285146986cdcdb::t_4f8039eb9eed9b 25,238-273,1235,1244-1251
+  s_285146986cdcdb::t_865e337db5e995 138-144,207-237
+  s_285146986cdcdb::t_42af24e1ff5849 686-691
+  s_285146986cdcdb::t_3a4b3fa66a057a 701-702,712-729,732-734,741-743,749
+  s_285146986cdcdb::t_3340e3e6ffc92a 979-985,1298
+src/renderer/renderer.js
+  s_285146986cdcdb::t_54a987ce7c243e 100-103
+  s_285146986cdcdb::t_9c02a42ff6c0cc 50,52,73,315-319,332,334-339,341-346,394-402,422-424,427
+tests/desktop-features.test.js
+  s_285146986cdcdb::t_ebc98556f78a09 55
+src/preload.js
+  s_285146986cdcdb::t_42af24e1ff5849 18
+src/renderer/ble-client.js
+  s_285146986cdcdb::t_6a4f88f9e1fa46 363,372,374-424
+  s_285146986cdcdb::t_23776c08bb1150 434-437,445-449,470-471,617-621
+  s_285146986cdcdb::t_54a987ce7c243e 522-527,568-573
+  s_285146986cdcdb::t_6d585f4e42ea6c 76,115,117,327
+  s_285146986cdcdb::t_0d928424d56940 272,321,794,853
+src/settings-store.js
+  s_285146986cdcdb::t_3dbdfbf2991545 12,72-96,103,190
+package.json
+  s_285146986cdcdb::t_6ac6bf092ed924 3
+tests/hardware-image.test.js
+  s_285146986cdcdb::t_30c22cdee23c8c 10,21-50
+src/hardware-image.js
+  s_285146986cdcdb::t_963149a9875c0e 288-367,612
+package-lock.json
+  s_285146986cdcdb::t_49db061f45209e 3,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "3b30e2602384a033660b0e9a912073b6380cddca",
+  "prompts": {},
+  "sessions": {
+    "s_285146986cdcdb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd167-97e3-7830-af9f-4e8a198f25b3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    },
+    "s_66f621550653f0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd4f4-39de-7f41-a6bc-4458d1d27f68",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "fcb1379 <78068038+fcb1379@users.noreply.github.com>"
+    }
+  }
+}
