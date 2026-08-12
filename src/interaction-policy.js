@@ -4,7 +4,8 @@ function shouldIgnoreMouse(options = {})
 {
     const forcedInteractive = true === options.hasApproval
         || true === options.positionAdjusting
-        || true === options.sessionDetailsOpen;
+        || true === options.sessionDetailsOpen
+        || true === options.transcriptionPanelOpen;
 
     if (forcedInteractive)
     {

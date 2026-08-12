@@ -8,6 +8,7 @@
         connected: "已连接",
         synced: "已同步",
         transferring: "图片",
+        audio_error: "音频!",
         scan_required: "重新扫描",
         disconnected: "BLE",
         error: "重试"

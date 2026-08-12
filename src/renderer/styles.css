@@ -94,6 +94,47 @@ body.state-error {
     transform: rotate(45deg);
 }
 
+#transcription-toggle {
+    position: absolute;
+    top: 78px;
+    right: 18px;
+    z-index: 12;
+    min-width: 76px;
+    height: 26px;
+    padding: 0 9px;
+    border: 1px solid rgba(131, 234, 255, 0.72);
+    border-radius: 13px;
+    color: #dff9ff;
+    background: rgba(20, 54, 78, 0.94);
+    box-shadow: 0 5px 14px rgba(0, 0, 0, 0.32);
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 800;
+    -webkit-app-region: no-drag;
+}
+
+#transcription-toggle[hidden] {
+    display: none;
+}
+
+#transcription-toggle:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+#transcription-toggle[data-state="active"],
+#transcription-toggle[data-state="stopping"] {
+    border-color: rgba(255, 121, 137, 0.88);
+    color: #ffe5e9;
+    background: rgba(113, 36, 50, 0.94);
+}
+
+#transcription-toggle[data-state="starting"] {
+    border-color: rgba(255, 205, 92, 0.88);
+    color: #fff4c7;
+    background: rgba(91, 65, 20, 0.94);
+}
+
 #status-title {
     color: var(--state-color);
     font-size: 15px;
@@ -889,6 +930,169 @@ body.is-position-adjusting #speech-bubble {
 .has-session-details #pet-view,
 .has-session-details #traffic-view,
 .has-session-details #hide-button {
+    opacity: 0.1;
+    filter: blur(2px);
+    pointer-events: none;
+}
+
+/* Local speech-to-text input */
+#transcription-panel {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    top: 8px;
+    z-index: 24;
+    min-height: 132px;
+    padding: 10px 11px 8px;
+    border: 2px solid #69ddf7;
+    border-radius: 16px;
+    color: var(--text);
+    background: linear-gradient(155deg, rgba(24, 38, 60, 0.985), rgba(10, 18, 31, 0.99));
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.48);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 8px;
+    -webkit-app-region: no-drag;
+}
+
+#transcription-panel[hidden] {
+    display: none;
+}
+
+.has-transcription #transcription-toggle {
+    top: 11px;
+    right: 38px;
+    z-index: 26;
+    min-width: 82px;
+}
+
+.has-transcription #transcription-panel > header {
+    padding-right: 116px;
+}
+#transcription-close {
+    position: absolute;
+    top: 11px;
+    right: 10px;
+    z-index: 27;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 50%;
+    color: #dce9f7;
+    background: rgba(16, 27, 44, 0.92);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 18px;
+    -webkit-app-region: no-drag;
+}
+#transcription-close:hover {
+    border-color: rgba(255, 121, 137, 0.88);
+    color: #ffe5e9;
+    background: rgba(113, 36, 50, 0.94);
+}
+
+
+
+
+
+#transcription-panel > header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    -webkit-app-region: drag;
+}
+
+#transcription-panel > header strong {
+    color: #83eaff;
+    font-size: 14px;
+}
+
+#transcription-status {
+    color: #a7b6ca;
+    font-size: 10px;
+}
+
+#transcription-status[data-status="error"] {
+    color: #ff8192;
+}
+
+#transcription-status[data-status="complete"] {
+    color: #65e6a0;
+}
+
+#conversation-input {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 55px;
+    max-height: 92px;
+    padding: 7px 9px;
+    resize: vertical;
+    border: 1px solid rgba(131, 234, 255, 0.4);
+    border-radius: 9px;
+    outline: none;
+    color: #f5f7fb;
+    background: rgba(5, 12, 23, 0.78);
+    font: 12px/1.45 "Microsoft YaHei UI", "Segoe UI", sans-serif;
+    user-select: text;
+    -webkit-app-region: no-drag;
+}
+
+#conversation-input:focus {
+    border-color: #83eaff;
+    box-shadow: 0 0 0 2px rgba(43, 196, 232, 0.16);
+}
+
+#conversation-input[readonly] {
+    color: #cbd8e7;
+    cursor: progress;
+}
+
+.transcription-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.transcription-actions button {
+    min-width: 46px;
+    padding: 4px 8px;
+    border: 1px solid rgba(131, 234, 255, 0.46);
+    border-radius: 8px;
+    color: #dff9ff;
+    background: rgba(43, 196, 232, 0.13);
+    cursor: pointer;
+    font-size: 10px;
+    -webkit-app-region: no-drag;
+}
+
+.transcription-actions button:disabled {
+    opacity: 0.42;
+    cursor: default;
+}
+
+#transcription-detail {
+    align-self: center;
+    overflow: hidden;
+    color: #7f90a8;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 8px;
+}
+
+.has-transcription #speech-bubble {
+    visibility: hidden;
+}
+
+.mode-traffic.has-transcription {
+    width: 300px;
+    height: 350px;
+}
+
+.has-approval #transcription-panel,
+.has-session-details #transcription-panel {
     opacity: 0.1;
     filter: blur(2px);
     pointer-events: none;

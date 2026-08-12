@@ -57,3 +57,32 @@ test("hardware progress formatter loads before the renderer", () => {
         "hardware status formatter must load before the renderer"
     );
 });
+
+test("local transcription exposes an editable conversation input panel", () => {
+    const html = fs.readFileSync(path.join(rendererDirectory, "index.html"), "utf8");
+    const renderer = fs.readFileSync(path.join(rendererDirectory, "renderer.js"), "utf8");
+
+    assert.match(html, /id="transcription-panel"/);
+    assert.match(html, /id="conversation-input"/);
+    assert.match(renderer, /onLocalSttUpdate\(applyLocalSttUpdate\)/);
+    assert.match(renderer, /clearLocalTranscription\(\)/);
+});
+
+test("transcription toggle remains above the visible input panel", () => {
+    const styles = fs.readFileSync(path.join(rendererDirectory, "styles.css"), "utf8");
+    const rule = styles.match(/\.has-transcription #transcription-toggle\s*\{([^}]+)\}/);
+
+    assert.ok(rule, "missing visible transcription toggle CSS rule");
+    assert.match(rule[1], /top:\s*11px/);
+    assert.match(rule[1], /z-index:\s*26/);
+});
+
+test("visible transcription panel locks native interaction and exposes close control", () => {
+    const html = fs.readFileSync(path.join(rendererDirectory, "index.html"), "utf8");
+    const renderer = fs.readFileSync(path.join(rendererDirectory, "renderer.js"), "utf8");
+    const preload = fs.readFileSync(path.join(rendererDirectory, "..", "preload.js"), "utf8");
+
+    assert.match(html, /id="transcription-close"/);
+    assert.match(renderer, /setTranscriptionPanelOpen\(visible\)/);
+    assert.match(preload, /transcription-panel-state/);
+});

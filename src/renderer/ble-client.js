@@ -6,13 +6,16 @@
     const DEFAULT_RECONNECT_ATTEMPTS = 3;
     const IMAGE_PACKET_DELAY_MS = 10;
     const IMAGE_RETRY_DELAY_MS = 150;
-    const IMAGE_FAST_BURST_PACKETS = 16;
+    const IMAGE_FAST_BURST_PACKETS = 4;
     const IMAGE_FLOW_ACK_ATTEMPTS = 100;
     const IMAGE_FLOW_ACK_DELAY_MS = 20;
-    const IMAGE_COMMIT_VERIFY_ATTEMPTS = 30;
+    const IMAGE_COMMIT_VERIFY_ATTEMPTS = 150;
     const IMAGE_COMMIT_VERIFY_DELAY_MS = 400;
     const IMAGE_SPEED_WARMUP_MS = 500;
     const IMAGE_GATT_OPERATION_TIMEOUT_MS = 6000;
+    const IMAGE_BACKGROUND_RETRY_DELAY_MS = 1500;
+    const AUDIO_NOTIFICATION_RETRY_ATTEMPTS = 3;
+    const AUDIO_NOTIFICATION_RETRY_DELAY_MS = 300;
 
     function wait(milliseconds)
     {
@@ -57,6 +60,30 @@
         return "GattOperationTimeoutError" === (error && error.name);
     }
 
+    function makeDeviceImageRejectedError(slot, result)
+    {
+        const error = new Error(`Device rejected image slot ${slot} (result ${result})`);
+        error.name = "DeviceImageRejectedError";
+        error.slot = slot;
+        error.result = Number(result);
+        return error;
+    }
+
+    function deviceImageWasRejected(error)
+    {
+        return "DeviceImageRejectedError" === (error && error.name);
+    }
+
+    function deviceImageCanRecover(error)
+    {
+        if (!deviceImageWasRejected(error))
+        {
+            return true;
+        }
+        return [102, 103, 105, 108].includes(Number(error.result));
+    }
+
+
     class AgentPetBleClient
     {
         constructor(options)
@@ -66,6 +93,7 @@
             this.imageCharacteristicUuid = options.imageCharacteristicUuid;
             this.imageDigestCharacteristicUuid = options.imageDigestCharacteristicUuid;
             this.meritCharacteristicUuid = options.meritCharacteristicUuid;
+            this.audioCharacteristicUuid = options.audioCharacteristicUuid;
             this.bluetooth = options.bluetooth
                 || (globalObject.navigator && globalObject.navigator.bluetooth);
             this.encodeImage = options.encodeImage;
@@ -77,9 +105,12 @@
             this.parseImageDigest = options.parseImageDigest;
             this.encodeTimeSync = options.encodeTimeSync;
             this.encodeDailyMerit = options.encodeDailyMerit;
+            this.encodeAudioControl = options.encodeAudioControl;
             this.parseDailyMerit = options.parseDailyMerit;
             this.getDailyMerit = options.getDailyMerit || (() => null);
             this.onDailyMerit = options.onDailyMerit || (() => {});
+            this.onAudioFrame = options.onAudioFrame || (async () => {});
+            this.onAudioDisconnect = options.onAudioDisconnect || (async () => {});
             this.onStatus = options.onStatus || (() => {});
             this.wait = options.wait || wait;
             this.now = "function" === typeof options.now ? options.now : () => Date.now();
@@ -104,12 +135,19 @@
             this.imageGattOperationTimeoutMs = Number.isInteger(options.imageGattOperationTimeoutMs)
                 ? Math.max(1, options.imageGattOperationTimeoutMs)
                 : IMAGE_GATT_OPERATION_TIMEOUT_MS;
+            this.audioNotificationRetryAttempts = Number.isInteger(options.audioNotificationRetryAttempts)
+                ? Math.max(1, options.audioNotificationRetryAttempts)
+                : AUDIO_NOTIFICATION_RETRY_ATTEMPTS;
+            this.audioNotificationRetryDelayMs = Number.isInteger(options.audioNotificationRetryDelayMs)
+                ? Math.max(0, options.audioNotificationRetryDelayMs)
+                : AUDIO_NOTIFICATION_RETRY_DELAY_MS;
             this.enabled = false !== options.enabled;
             this.device = null;
             this.characteristic = null;
             this.imageCharacteristic = null;
             this.imageDigestCharacteristic = null;
             this.meritCharacteristic = null;
+            this.audioCharacteristic = null;
             this.latestFrames = [];
             this.latestTypingFrames = [];
             this.latestImage = { revision: "default", data: null };
@@ -117,7 +155,11 @@
             this.syncedImageRevision = null;
             this.syncedImageRevisions = new Map();
             this.writeQueue = Promise.resolve();
+            this.audioQueue = Promise.resolve();
+            this.audioStreamActive = false;
+            this.imageSyncPending = false;
             this.reconnectTimer = null;
+            this.imageRetryTimer = null;
             this.reconnectAttempts = 0;
             this.maxReconnectAttempts = Number.isInteger(options.maxReconnectAttempts)
                 ? Math.max(1, options.maxReconnectAttempts)
@@ -125,6 +167,7 @@
             this.manualDisconnect = false;
             this.handleDisconnected = this.handleDisconnected.bind(this);
             this.handleMeritNotification = this.handleMeritNotification.bind(this);
+            this.handleAudioNotification = this.handleAudioNotification.bind(this);
         }
 
         async runImageGattOperation(operation, description)
@@ -175,6 +218,99 @@
             );
         }
 
+        async waitForImageBegin(slot, total)
+        {
+            let lastDigest = null;
+
+            for (let attempt = 0; attempt < this.imageFlowAckAttempts; attempt++)
+            {
+                if (0 < this.imageFlowAckDelayMs)
+                {
+                    await this.wait(this.imageFlowAckDelayMs);
+                }
+                if (this.deferImageTransfer())
+                {
+                    return false;
+                }
+                try
+                {
+                    lastDigest = this.parseImageDigest(await this.readImageDigestValue());
+                }
+                catch (error)
+                {
+                    if (gattOperationTimedOut(error))
+                    {
+                        throw error;
+                    }
+                    continue;
+                }
+
+                if (100 <= Number(lastDigest.result))
+                {
+                    throw makeDeviceImageRejectedError(slot, lastDigest.result);
+                }
+                if (!Number.isInteger(lastDigest.state) ||
+                    !Number.isInteger(lastDigest.total))
+                {
+                    return true;
+                }
+                if (1 === lastDigest.state && total === lastDigest.total &&
+                    0 === lastDigest.received && 100 > (Number(lastDigest.result) || 0))
+                {
+                    return true;
+                }
+            }
+
+            if (lastDigest && 100 <= Number(lastDigest.result))
+            {
+                throw makeDeviceImageRejectedError(slot, lastDigest.result);
+            }
+            throw new Error(
+                `Device did not acknowledge image slot ${slot} BEGIN ` +
+                `(state ${lastDigest?.state ?? "?"}, total ${lastDigest?.total ?? "?"})`
+            );
+        }
+
+        async waitForCommittedImage(slot, image)
+        {
+            if (!this.imageDigestCharacteristic ||
+                "function" !== typeof this.parseImageDigest || !image?.md5)
+            {
+                return;
+            }
+
+            for (let attempt = 0; attempt < IMAGE_COMMIT_VERIFY_ATTEMPTS; attempt++)
+            {
+                await this.wait(IMAGE_COMMIT_VERIFY_DELAY_MS);
+                if (this.deferImageTransfer())
+                {
+                    return;
+                }
+                try
+                {
+                    const digest = this.parseImageDigest(await this.readImageDigestValue());
+                    if (100 <= Number(digest.result))
+                    {
+                        throw makeDeviceImageRejectedError(slot, digest.result);
+                    }
+                    if (digest.available && image.md5 === digest.md5)
+                    {
+                        return;
+                    }
+                }
+                catch (error)
+                {
+                    if (gattOperationTimedOut(error) || deviceImageWasRejected(error))
+                    {
+                        throw error;
+                    }
+                    /* Flash commit can briefly make the digest characteristic unavailable. */
+                }
+            }
+
+            throw new Error(`Image slot ${slot} commit digest was not confirmed`);
+        }
+
         isEnabled()
         {
             return this.enabled;
@@ -201,6 +337,121 @@
         isConnected()
         {
             return Boolean(this.enabled && this.device && this.device.gatt && this.device.gatt.connected && this.characteristic && this.imageCharacteristic);
+        }
+
+        clearImageRetry()
+        {
+            clearTimeout(this.imageRetryTimer);
+            this.imageRetryTimer = null;
+        }
+
+        queueImageSync()
+        {
+            if (!this.isConnected())
+            {
+                return;
+            }
+            this.clearImageRetry();
+            this.writeQueue = this.writeQueue
+                .then(() => this.flushImages())
+                .catch((error) => this.handleImageSyncFailure(error));
+        }
+
+        handleImageSyncFailure(error)
+        {
+            if (!this.isConnected())
+            {
+                return;
+            }
+            if (!deviceImageCanRecover(error))
+            {
+                this.onStatus("error", error.message);
+                return;
+            }
+
+            this.imageSyncPending = true;
+            this.onStatus(
+                "transferring",
+                `\u8bbe\u5907\u6062\u590d\u4e2d\uff0c${IMAGE_BACKGROUND_RETRY_DELAY_MS / 1000}s \u540e\u7ee7\u7eed\u540c\u6b65`
+            );
+            this.clearImageRetry();
+            this.imageRetryTimer = setTimeout(() => {
+                this.imageRetryTimer = null;
+                if (!this.isConnected())
+                {
+                    return;
+                }
+                if (this.audioStreamActive)
+                {
+                    this.imageSyncPending = true;
+                    return;
+                }
+                this.imageSyncPending = false;
+                this.queueImageSync();
+            }, IMAGE_BACKGROUND_RETRY_DELAY_MS);
+        }
+
+        deferImageTransfer()
+        {
+            if (!this.audioStreamActive)
+            {
+                return false;
+            }
+            this.imageSyncPending = true;
+            return true;
+        }
+
+        setAudioStreamActive(active)
+        {
+            const nextActive = true === active;
+            if (nextActive === this.audioStreamActive)
+            {
+                return;
+            }
+
+            this.audioStreamActive = nextActive;
+            if (this.audioStreamActive)
+            {
+                this.imageSyncPending = true;
+                return;
+            }
+            if (!this.imageSyncPending || !this.isConnected())
+            {
+                return;
+            }
+
+            this.imageSyncPending = false;
+            this.queueImageSync();
+        }
+
+        async restoreAuthorizedDevice()
+        {
+            if (!this.enabled || this.device || !this.bluetooth ||
+                "function" !== typeof this.bluetooth.getDevices)
+            {
+                return false;
+            }
+
+            const devices = await this.bluetooth.getDevices();
+            const device = devices.find((candidate) =>
+                String(candidate?.name || "").startsWith("AgentPet-"));
+            if (!device)
+            {
+                return false;
+            }
+
+            this.manualDisconnect = false;
+            this.setDevice(device);
+            try
+            {
+                return await this.connectGatt();
+            }
+            catch (error)
+            {
+                this.releaseDevice();
+                this.onStatus("error", `自动连接失败：${error.message}`);
+                return false;
+            }
         }
 
         async connect()
@@ -263,15 +514,21 @@
 
         releaseDevice()
         {
+            this.clearImageRetry();
             this.detachMeritNotifications();
+            this.detachAudioNotifications();
+            this.cancelAudioStream();
             this.setDevice(null);
             this.characteristic = null;
             this.imageCharacteristic = null;
             this.imageDigestCharacteristic = null;
             this.meritCharacteristic = null;
+            this.audioCharacteristic = null;
             this.syncedImageRevision = null;
             this.syncedImageRevisions.clear();
             this.writeQueue = Promise.resolve();
+            this.audioStreamActive = false;
+            this.imageSyncPending = false;
         }
 
         async connectGatt()
@@ -295,6 +552,7 @@
             this.imageCharacteristic = await service.getCharacteristic(this.imageCharacteristicUuid);
             this.imageDigestCharacteristic = null;
             this.meritCharacteristic = null;
+            this.audioCharacteristic = null;
             if (this.imageDigestCharacteristicUuid)
             {
                 try
@@ -317,18 +575,38 @@
                     this.meritCharacteristic = null;
                 }
             }
+            let audioNotificationError = null;
+            try
+            {
+                await this.enableAudioNotificationsWithRetry(service);
+            }
+            catch (error)
+            {
+                audioNotificationError = error;
+            }
             this.reconnectAttempts = 0;
             this.syncedImageRevision = null;
             this.syncedImageRevisions.clear();
-            this.onStatus("connected", this.device.name || "Agent Pet");
+            this.onStatus(
+                audioNotificationError ? "audio_error" : "connected",
+                audioNotificationError
+                    ? audioNotificationError.message
+                    : this.device.name || "Agent Pet"
+            );
             this.writeQueue = Promise.resolve()
                 .then(() => this.flushTime())
                 .then(() => this.flushMerit())
                 .then(() => this.flushLatest())
                 .then(() => this.flushTypingAnimation())
-                .then(() => this.flushImages());
+                .then(() => this.flushImages().catch(
+                    (error) => this.handleImageSyncFailure(error)
+                ));
             await this.writeQueue;
             await this.enableMeritNotifications();
+            if (audioNotificationError)
+            {
+                this.onStatus("audio_error", audioNotificationError.message);
+            }
             return true;
         }
 
@@ -365,14 +643,13 @@
             this.latestImages.set(0, this.latestImage);
             if (this.isConnected())
             {
-                this.writeQueue = this.writeQueue
-                    .then(() => this.flushImage())
-                    .catch((error) => this.onStatus("error", error.message));
+                this.queueImageSync();
             }
         }
 
         setImages(images)
         {
+            let changed = false;
             for (const image of Array.isArray(images) ? images : [])
             {
                 const slot = Number(image && image.slot);
@@ -395,16 +672,15 @@
                 }
                 const normalized = { slot, revision, md5, data };
                 this.latestImages.set(slot, normalized);
+                changed = true;
                 if (0 === slot)
                 {
                     this.latestImage = normalized;
                 }
             }
-            if (this.isConnected())
+            if (changed && this.isConnected())
             {
-                this.writeQueue = this.writeQueue
-                    .then(() => this.flushImages())
-                    .catch((error) => this.onStatus("error", error.message));
+                this.queueImageSync();
             }
         }
 
@@ -424,6 +700,10 @@
                 ? this.syncedImageRevision
                 : this.syncedImageRevisions.get(slot);
             if (!this.isConnected() || !image || syncedRevision === image.revision)
+            {
+                return;
+            }
+            if (this.deferImageTransfer())
             {
                 return;
             }
@@ -497,9 +777,21 @@
                 {
                     if (useFastWrite)
                     {
+                        if (this.deferImageTransfer())
+                        {
+                            return;
+                        }
                         await this.writeImageValueWithResponse(frames[0]);
+                        if (!await this.waitForImageBegin(slot, imageByteLength))
+                        {
+                            return;
+                        }
                         for (let index = 1; index < frames.length - 1; index++)
                         {
+                            if (this.deferImageTransfer())
+                            {
+                                return;
+                            }
                             const isLastDataFrame = index + 2 === frames.length;
                             const isFlowControlBoundary =
                                 0 === index % this.imageFastBurstPackets || isLastDataFrame;
@@ -523,8 +815,8 @@
                                         );
                                         if (100 <= Number(digest.result))
                                         {
-                                            throw new Error(
-                                                `Device rejected image slot ${slot} (result ${digest.result})`
+                                            throw makeDeviceImageRejectedError(
+                                                slot, digest.result
                                             );
                                         }
                                         if (Number.isInteger(digest.received) &&
@@ -537,6 +829,10 @@
                                     catch (error)
                                     {
                                         if (gattOperationTimedOut(error))
+                                        {
+                                            throw error;
+                                        }
+                                        if (deviceImageWasRejected(error))
                                         {
                                             throw error;
                                         }
@@ -554,50 +850,28 @@
                                 this.onStatus("transferring", transferDetail(index, percent, "flow"));
                             }
                         }
+                        if (this.deferImageTransfer())
+                        {
+                            return;
+                        }
                         await this.writeImageValueWithResponse(frames.at(-1));
 
-                        let committed = false;
-                        for (let verifyAttempt = 0;
-                            verifyAttempt < IMAGE_COMMIT_VERIFY_ATTEMPTS;
-                            verifyAttempt++)
-                        {
-                            await this.wait(IMAGE_COMMIT_VERIFY_DELAY_MS);
-                            try
-                            {
-                                const digest = this.parseImageDigest(
-                                    await this.readImageDigestValue()
-                                );
-                                if (100 <= Number(digest.result))
-                                {
-                                    throw new Error(
-                                        `Device rejected image slot ${slot} (result ${digest.result})`
-                                    );
-                                }
-                                if (image.md5 && digest.available && image.md5 === digest.md5)
-                                {
-                                    committed = true;
-                                    break;
-                                }
-                            }
-                            catch (error)
-                            {
-                                if (gattOperationTimedOut(error))
-                                {
-                                    throw error;
-                                }
-                                /* Commit validation can briefly own the firmware image mutex. */
-                            }
-                        }
-                        if (!committed)
-                        {
-                            throw new Error("Fast image transfer was not committed");
-                        }
+                        await this.waitForCommittedImage(slot, image);
                     }
                     else
                     {
                         for (let index = 0; index < frames.length; index++)
                         {
+                            if (this.deferImageTransfer())
+                            {
+                                return;
+                            }
                             await this.writeImageValueWithResponse(frames[index]);
+                            if (0 === index && image.data && supportsFlowControl &&
+                                !await this.waitForImageBegin(slot, imageByteLength))
+                            {
+                                return;
+                            }
                             if (0 === index % progressStep || index + 1 === frames.length)
                             {
                                 const dataFrameCount = Math.max(0, Math.min(index, frames.length - 2));
@@ -615,7 +889,12 @@
                                 await this.wait(this.imagePacketDelayMs);
                             }
                         }
+                        if (image.data && supportsFlowControl)
+                        {
+                            await this.waitForCommittedImage(slot, image);
+                        }
                     }
+                    this.imageSyncPending = false;
                     this.syncedImageRevisions.set(slot, image.revision);
                     if (0 === slot)
                     {
@@ -632,6 +911,10 @@
                 catch (error)
                 {
                     lastError = error;
+                    if (deviceImageWasRejected(error) && !deviceImageCanRecover(error))
+                    {
+                        throw error;
+                    }
                     if (gattOperationTimedOut(error) ||
                         !image.data || !this.isConnected() || attempt + 1 === dataSizes.length)
                     {
@@ -814,10 +1097,137 @@
                 .catch((error) => this.onStatus("error", error.message));
         }
 
+        async enableAudioNotifications()
+        {
+            if (!this.audioCharacteristic ||
+                "function" !== typeof this.audioCharacteristic.startNotifications ||
+                "function" !== typeof this.audioCharacteristic.addEventListener)
+            {
+                throw new Error("Audio characteristic does not support notifications");
+            }
+            await this.audioCharacteristic.startNotifications();
+            this.audioCharacteristic.addEventListener(
+                "characteristicvaluechanged",
+                this.handleAudioNotification);
+        }
+
+        async requestAudioStream(active)
+        {
+            if (!this.isConnected() || !this.audioCharacteristic ||
+                "function" !== typeof this.audioCharacteristic.writeValueWithResponse ||
+                "function" !== typeof this.encodeAudioControl)
+            {
+                throw new Error("\u97F3\u9891\u63A7\u5236\u901A\u9053\u5C1A\u672A\u8FDE\u63A5");
+            }
+
+            const frame = this.encodeAudioControl(true === active);
+            if (!(frame instanceof Uint8Array) || 0 === frame.length)
+            {
+                throw new Error("\u97F3\u9891\u63A7\u5236\u547D\u4EE4\u65E0\u6548");
+            }
+
+            if (true === active)
+            {
+                this.setAudioStreamActive(true);
+            }
+            const operation = this.writeQueue.then(() =>
+                this.audioCharacteristic.writeValueWithResponse(frame));
+            this.writeQueue = operation.catch(() => {});
+            try
+            {
+                await operation;
+                return true;
+            }
+            catch (error)
+            {
+                if (true === active)
+                {
+                    this.setAudioStreamActive(false);
+                }
+                throw error;
+            }
+        }
+
+        async enableAudioNotificationsWithRetry(service)
+        {
+            if (!this.audioCharacteristicUuid)
+            {
+                return;
+            }
+
+            let lastError = null;
+            for (let attempt = 1; attempt <= this.audioNotificationRetryAttempts; attempt++)
+            {
+                try
+                {
+                    this.audioCharacteristic = await service.getCharacteristic(
+                        this.audioCharacteristicUuid);
+                    await this.enableAudioNotifications();
+                    return;
+                }
+                catch (error)
+                {
+                    lastError = error;
+                    this.detachAudioNotifications();
+                    this.audioCharacteristic = null;
+                    if (attempt < this.audioNotificationRetryAttempts)
+                    {
+                        await this.wait(this.audioNotificationRetryDelayMs);
+                    }
+                }
+            }
+
+            throw new Error(`音频通道订阅失败：${lastError?.message || "特征不可用"}`);
+        }
+
+        detachAudioNotifications()
+        {
+            if (this.audioCharacteristic &&
+                "function" === typeof this.audioCharacteristic.removeEventListener)
+            {
+                this.audioCharacteristic.removeEventListener(
+                    "characteristicvaluechanged",
+                    this.handleAudioNotification);
+            }
+        }
+
+        handleAudioNotification(event)
+        {
+            if (!event || !event.target || !event.target.value)
+            {
+                return;
+            }
+            const value = event.target.value;
+            const frame = new Uint8Array(
+                value.buffer,
+                value.byteOffset || 0,
+                value.byteLength
+            ).slice();
+            this.audioQueue = this.audioQueue
+                .then(() => this.onAudioFrame(frame))
+                .catch((error) => this.onStatus(
+                    "error",
+                    "Audio receive failed: " + error.message
+                ));
+        }
+
+        cancelAudioStream()
+        {
+            this.audioQueue = this.audioQueue
+                .then(() => this.onAudioDisconnect())
+                .catch((error) => this.onStatus(
+                    "error",
+                    "Audio cleanup failed: " + error.message
+                ));
+        }
+
         disconnect(silent = false)
         {
             this.manualDisconnect = true;
+            this.clearImageRetry();
             this.detachMeritNotifications();
+            this.detachAudioNotifications();
+            this.cancelAudioStream();
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
             if (this.device && this.device.gatt && this.device.gatt.connected)
@@ -828,9 +1238,12 @@
             this.imageCharacteristic = null;
             this.imageDigestCharacteristic = null;
             this.meritCharacteristic = null;
+            this.audioCharacteristic = null;
             this.syncedImageRevision = null;
             this.syncedImageRevisions.clear();
             this.writeQueue = Promise.resolve();
+            this.audioStreamActive = false;
+            this.imageSyncPending = false;
             if (!silent)
             {
                 this.onStatus("disconnected");
@@ -882,14 +1295,20 @@
 
         handleDisconnected()
         {
+            this.clearImageRetry();
             this.detachMeritNotifications();
+            this.detachAudioNotifications();
+            this.cancelAudioStream();
             this.characteristic = null;
             this.imageCharacteristic = null;
             this.imageDigestCharacteristic = null;
             this.meritCharacteristic = null;
+            this.audioCharacteristic = null;
             this.syncedImageRevision = null;
             this.syncedImageRevisions.clear();
             this.writeQueue = Promise.resolve();
+            this.audioStreamActive = false;
+            this.imageSyncPending = false;
             if (!this.enabled)
             {
                 clearTimeout(this.reconnectTimer);

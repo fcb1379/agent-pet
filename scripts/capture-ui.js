@@ -9,7 +9,9 @@ const mode = process.argv[3] || "pet";
 const scenario = process.argv[4] || "state";
 const requestedScale = Number(process.env.AGENT_PET_CAPTURE_SCALE || 1);
 const uiScale = [0.75, 1, 1.25, 1.5].includes(requestedScale) ? requestedScale : 1;
-const baseSize = "traffic" === mode ? { width: 104, height: 236 } : { width: 300, height: 350 };
+const baseSize = "transcription" === scenario || "traffic" !== mode
+    ? { width: 300, height: 350 }
+    : { width: 104, height: 236 };
 
 app.whenReady().then(async () => {
     const window = new BrowserWindow({
@@ -103,9 +105,29 @@ app.whenReady().then(async () => {
             summary: "npm run build -- --safe-mode"
         });
     }
+    else if ("transcription" === scenario)
+    {
+        window.webContents.send("local-stt-update", {
+            sessionId: 1,
+            status: "complete",
+            text: "帮我整理今天的项目进展，并列出明天最重要的三个任务。",
+            isFinal: true,
+            receivedBytes: 48120
+        });
+    }
 
     const captureDelay = "hover" === scenario ? 380 : ("wooden-fish" === scenario ? 280 : 900);
     await new Promise((resolve) => setTimeout(resolve, captureDelay));
+    if ("transcription" === scenario)
+    {
+        const ui = await window.webContents.executeJavaScript(`JSON.stringify({
+            panelHidden: document.getElementById("transcription-panel").hidden,
+            bodyClass: document.body.className,
+            text: document.getElementById("conversation-input").value,
+            listenerAvailable: "function" === typeof window.agentPet.onLocalSttUpdate
+        })`);
+        process.stdout.write(`Transcription UI check ${ui}\n`);
+    }
     if ("wooden-fish" === scenario)
     {
         const ui = await window.webContents.executeJavaScript(`(() => {

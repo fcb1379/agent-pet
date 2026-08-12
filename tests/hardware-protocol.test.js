@@ -6,6 +6,7 @@ const {
     HardwareProtocolEncoder,
     crc8Atm,
     crc32Mpeg2,
+    encodeAudioControl,
     encodeDailyMerit,
     encodeMascotImage,
     encodeMascotReset,
@@ -21,6 +22,18 @@ const {
 
 test("CRC-8/ATM matches the standard check vector", () => {
     assert.equal(crc8Atm(Buffer.from("123456789", "ascii")), 0xf4);
+});
+
+test("audio control frames encode start and stop with CRC protection", () => {
+    const start = encodeAudioControl(true);
+    const stop = encodeAudioControl(false);
+
+    assert.deepEqual(Array.from(start.subarray(0, 4)), [0x41, 0x43, 1, 1]);
+    assert.deepEqual(Array.from(stop.subarray(0, 4)), [0x41, 0x43, 1, 2]);
+    assert.equal(start.length, 5);
+    assert.equal(stop.length, 5);
+    assert.equal(start[4], crc8Atm(start.subarray(0, 4)));
+    assert.equal(stop[4], crc8Atm(stop.subarray(0, 4)));
 });
 
 test("CRC-32/MPEG-2 matches the standard check vector", () => {

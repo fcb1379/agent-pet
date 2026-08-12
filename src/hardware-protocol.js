@@ -9,6 +9,10 @@ const STATUS_RX_UUID = "7a1e0002-6b5f-4f5c-8c9d-3e2f1a0b1000";
 const IMAGE_RX_UUID = "7a1e0003-6b5f-4f5c-8c9d-3e2f1a0b1000";
 const IMAGE_DIGEST_UUID = "7a1e0004-6b5f-4f5c-8c9d-3e2f1a0b1000";
 const DAILY_MERIT_UUID = "7a1e0005-6b5f-4f5c-8c9d-3e2f1a0b1000";
+const AUDIO_STREAM_UUID = "7a1e0006-6b5f-4f5c-8c9d-3e2f1a0b1000";
+const AUDIO_CONTROL_FRAME_SIZE = 5;
+const AUDIO_CONTROL_COMMAND_START = 1;
+const AUDIO_CONTROL_COMMAND_STOP = 2;
 const DAILY_MERIT_FRAME_SIZE = 16;
 const DAILY_MERIT_MAX_COUNT = 0x7fffffff;
 const MESSAGE_TYPE_SNAPSHOT = 1;
@@ -107,6 +111,20 @@ function encodeDailyMerit(day, count)
     view.setUint32(4, day, true);
     view.setUint32(8, count, true);
     frame[15] = crc8Atm(frame.subarray(0, 15));
+    return frame;
+}
+
+function encodeAudioControl(active)
+{
+    const frame = new Uint8Array(AUDIO_CONTROL_FRAME_SIZE);
+
+    frame[0] = 0x41;
+    frame[1] = 0x43;
+    frame[2] = 1;
+    frame[3] = true === active
+        ? AUDIO_CONTROL_COMMAND_START
+        : AUDIO_CONTROL_COMMAND_STOP;
+    frame[4] = crc8Atm(frame.subarray(0, 4));
     return frame;
 }
 
@@ -562,6 +580,10 @@ const HARDWARE_PROTOCOL_API = Object.freeze({
     IMAGE_FORMAT_GIF,
     IMAGE_DIGEST_UUID,
     DAILY_MERIT_UUID,
+    AUDIO_STREAM_UUID,
+    AUDIO_CONTROL_COMMAND_START,
+    AUDIO_CONTROL_COMMAND_STOP,
+    AUDIO_CONTROL_FRAME_SIZE,
     DAILY_MERIT_FRAME_SIZE,
     IMAGE_RX_UUID,
     MAX_SESSION_COUNT,
@@ -582,6 +604,7 @@ const HARDWARE_PROTOCOL_API = Object.freeze({
     ageSeconds,
     crc8Atm,
     crc32Mpeg2,
+    encodeAudioControl,
     encodeDailyMerit,
     encodeMascotImage,
     encodeMascotReset,

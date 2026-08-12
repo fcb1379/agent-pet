@@ -43,6 +43,33 @@ test("dependency bootstrap detects a changed package lock and stamps installed s
     }
 });
 
+test("dependency bootstrap accepts packages that hide package.json with exports", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pet-dependencies-exports-"));
+    try
+    {
+        const moduleDirectory = path.join(directory, "node_modules", "exported-demo");
+        fs.mkdirSync(moduleDirectory, { recursive: true });
+        fs.writeFileSync(
+            path.join(directory, "package.json"),
+            JSON.stringify({ dependencies: { "exported-demo": "1.0.0" } })
+        );
+        fs.writeFileSync(path.join(directory, "package-lock.json"), "{\"lockfileVersion\":3}");
+        fs.writeFileSync(path.join(moduleDirectory, "index.js"), "module.exports = true;\n");
+        fs.writeFileSync(path.join(moduleDirectory, "package.json"), JSON.stringify({
+            name: "exported-demo",
+            main: "index.js",
+            exports: { ".": "./index.js" }
+        }));
+        writeDependencyStamp(directory);
+        assert.deepEqual(dependencyStatus(directory).missing, []);
+        assert.equal(dependencyStatus(directory).current, true);
+    }
+    finally
+    {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
 test("dependency bootstrap runs npm ci only when dependencies are stale", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "agent-pet-dependencies-run-"));
     try

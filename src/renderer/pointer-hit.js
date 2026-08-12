@@ -15,6 +15,9 @@
         document.getElementById("session-summary"),
         document.getElementById("state-badge"),
         document.getElementById("hide-button"),
+        document.getElementById("transcription-toggle"),
+        document.getElementById("transcription-close"),
+        document.getElementById("transcription-panel"),
         document.querySelector("#traffic-view .traffic-shell"),
         document.getElementById("traffic-label")
     ];

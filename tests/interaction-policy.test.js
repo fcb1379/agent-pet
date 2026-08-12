@@ -33,3 +33,4 @@ test("modal and position states override click-through", () => {
     assert.equal(shouldIgnoreMouse({ clickThrough: true, sessionDetailsOpen: true }), false);
     assert.equal(shouldIgnoreMouse({ clickThrough: true, positionAdjusting: true }), false);
 });
+    assert.equal(shouldIgnoreMouse({ clickThrough: true, transcriptionPanelOpen: true }), false);

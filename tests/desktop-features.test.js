@@ -66,6 +66,9 @@ test("settings accept only supported size and opacity presets", () => {
         },
         hardware: {
             enabled: false
+        },
+        stt: {
+            enabled: true
         }
     });
     assert.equal(normalizeSettings({ scale: 9 }).scale, 1);
@@ -73,6 +76,10 @@ test("settings accept only supported size and opacity presets", () => {
     assert.equal(normalizeSettings({ updateSource: "unknown" }).updateSource, "github");
     assert.equal(normalizeSettings({ hardware: { enabled: true } }).hardware.enabled, true);
     assert.equal(normalizeSettings({ hardware: { enabled: "yes" } }).hardware.enabled, false);
+    assert.deepEqual(normalizeSettings({
+        stt: { endpoint: "https://example.com/stt", language: "en", intervalMs: 800 }
+    }).stt, { enabled: true });
+    assert.deepEqual(normalizeSettings({ stt: { enabled: false } }).stt, { enabled: false });
 });
 
 test("approval decisions are written only for existing safe requests", () => {

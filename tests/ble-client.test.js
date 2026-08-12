@@ -94,6 +94,34 @@ function connectedDevice(name = "AgentPet-HS52")
     };
 }
 
+test("BLE restores an already authorized AgentPet device without scanning", async () => {
+    const device = connectedDevice();
+    let authorizedDeviceReads = 0;
+    let scanCount = 0;
+    const client = new AgentPetBleClient({
+        bluetooth: {
+            getDevices: async () => {
+                authorizedDeviceReads++;
+                return [device];
+            },
+            requestDevice: async () => {
+                scanCount++;
+                return device;
+            }
+        },
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        encodeImage: () => [],
+        encodeReset: () => [new Uint8Array(1)]
+    });
+
+    assert.equal(await client.restoreAuthorizedDevice(), true);
+    assert.equal(authorizedDeviceReads, 1);
+    assert.equal(scanCount, 0);
+    assert.equal(client.device, device);
+});
+
 test("BLE client serializes a changed mascot and does not resend the same revision", async () => {
     const writes = [];
     const client = new AgentPetBleClient({
@@ -338,10 +366,10 @@ test("BLE image fast path bursts data commands and verifies the committed digest
 
     assert.deepEqual(responseWrites, [0, 14]);
     assert.deepEqual(commandWrites, Array.from({ length: 13 }, (_value, index) => index + 1));
-    assert.equal(waits.filter((milliseconds) => 3 === milliseconds).length, 4);
+    assert.equal(waits.filter((milliseconds) => 3 === milliseconds).length, 5);
     assert.ok(waits.includes(400));
     assert.equal(digestReads, 11);
-    assert.equal(waits.filter((milliseconds) => 400 === milliseconds).length, 6);
+    assert.equal(waits.filter((milliseconds) => 400 === milliseconds).length, 5);
     assert.ok(statuses.some(([status, detail]) =>
         "transferring" === status && detail.includes("测速中")));
     assert.ok(statuses
@@ -350,6 +378,63 @@ test("BLE image fast path bursts data commands and verifies the committed digest
     assert.equal(client.syncedImageRevision, "fast");
 });
 
+
+test("BLE image response-write path tolerates a slow committed MD5", async () => {
+    const writes = [];
+    const waits = [];
+    const statuses = [];
+    let digestReads = 0;
+    const expectedMd5 = "d41d8cd98f00b204e9800998ecf8427e";
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        imageDigestCharacteristicUuid: "digest",
+        imageDataSizes: [235],
+        imageFlowAckDelayMs: 1,
+        imagePacketDelayMs: 0,
+        encodeImage: () => [
+            Uint8Array.from([1]),
+            Uint8Array.from([2]),
+            Uint8Array.from([3])
+        ],
+        encodeReset: () => [new Uint8Array(20)],
+        parseImageDigest: () => ({
+            available: 40 <= digestReads,
+            md5: 40 <= digestReads ? expectedMd5 : null,
+            received: 0,
+            total: 2 <= digestReads ? 3 : 0,
+            state: 2 <= digestReads ? 1 : 0,
+            result: 0
+        }),
+        wait: async (milliseconds) => waits.push(milliseconds),
+        onStatus: (status, detail) => statuses.push([status, detail])
+    });
+
+    client.device = { name: "test", gatt: { connected: true } };
+    client.characteristic = { writeValueWithResponse: async () => {} };
+    client.imageCharacteristic = {
+        writeValueWithResponse: async (frame) => writes.push(frame[0])
+    };
+    client.imageDigestCharacteristic = {
+        readValue: async () => {
+            digestReads++;
+            return new DataView(new ArrayBuffer(32));
+        }
+    };
+    client.latestImage = {
+        revision: "response-md5",
+        md5: expectedMd5,
+        data: Uint8Array.from([1, 2, 3])
+    };
+
+    await client.flushImage();
+    assert.deepEqual(writes, [1, 2, 3]);
+    assert.equal(digestReads, 40);
+    assert.equal(waits.filter((milliseconds) => 400 === milliseconds).length, 38);
+    assert.equal(client.syncedImageRevision, "response-md5");
+    assert.equal(statuses.at(-1)[0], "synced");
+});
 test("BLE client merges daily merit by keeping the larger same-day count", async () => {
     const updates = [];
     const writes = [];
@@ -511,4 +596,252 @@ test("automatic reconnect gives up a stale handle and requests a rescan", async 
     assert.ok(statuses.some(([status, detail]) =>
         "scan_required" === status && detail.includes("点击重新扫描")));
     assert.equal(deviceIsUnavailable(new Error("Bluetooth Device is no longer in range.")), true);
+});
+test("BLE audio notifications use an independent callback queue", async () => {
+    const frames = [];
+    let listener = null;
+    let starts = 0;
+    let removes = 0;
+    let disconnects = 0;
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        audioCharacteristicUuid: "audio",
+        encodeImage: () => [],
+        encodeReset: () => [],
+        onAudioFrame: async (frame) => frames.push(Array.from(frame)),
+        onAudioDisconnect: async () => { disconnects++; }
+    });
+
+    client.audioCharacteristic = {
+        startNotifications: async () => { starts++; },
+        addEventListener: (_name, callback) => { listener = callback; },
+        removeEventListener: () => { removes++; }
+    };
+    await client.enableAudioNotifications();
+    assert.equal(starts, 1);
+    assert.equal(typeof listener, "function");
+
+    const value = new DataView(Uint8Array.from([0x41, 0x4f, 1]).buffer);
+    listener({ target: { value } });
+    await client.audioQueue;
+    assert.deepEqual(frames, [[0x41, 0x4f, 1]]);
+
+    client.disconnect(true);
+    await client.audioQueue;
+    assert.equal(removes, 1);
+    assert.equal(disconnects, 1);
+});
+
+test("BLE subscribes to audio before waiting for normal synchronization", async () => {
+    const events = [];
+    const audioCharacteristic = {
+        startNotifications: async () => events.push("audio-start"),
+        addEventListener: () => events.push("audio-listener"),
+        removeEventListener: () => {}
+    };
+    const statusCharacteristic = {
+        writeValueWithResponse: async () => events.push("status-write")
+    };
+    const imageCharacteristic = { writeValueWithResponse: async () => {} };
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        audioCharacteristicUuid: "audio",
+        encodeImage: () => [],
+        encodeReset: () => [new Uint8Array(1)],
+        encodeTimeSync: () => [Uint8Array.from([1])]
+    });
+    client.setDevice({
+        name: "AgentPet-HS52",
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        gatt: {
+            connected: true,
+            connect: async () => ({
+                getPrimaryService: async () => ({
+                    getCharacteristic: async (uuid) => ({
+                        status: statusCharacteristic,
+                        image: imageCharacteristic,
+                        audio: audioCharacteristic
+                    })[uuid]
+                })
+            })
+        }
+    });
+
+    await client.connectGatt();
+
+    assert.deepEqual(events.slice(0, 2), ["audio-start", "audio-listener"]);
+    assert.ok(events.indexOf("audio-start") < events.indexOf("status-write"));
+});
+
+test("BLE retries audio subscription and reports a visible audio error", async () => {
+    const statuses = [];
+    const waits = [];
+    let audioDiscoveries = 0;
+    const statusCharacteristic = { writeValueWithResponse: async () => {} };
+    const imageCharacteristic = { writeValueWithResponse: async () => {} };
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        audioCharacteristicUuid: "audio",
+        audioNotificationRetryAttempts: 3,
+        audioNotificationRetryDelayMs: 7,
+        wait: async (milliseconds) => waits.push(milliseconds),
+        encodeImage: () => [],
+        encodeReset: () => [new Uint8Array(1)],
+        onStatus: (status, detail) => statuses.push([status, detail])
+    });
+    client.setDevice({
+        name: "AgentPet-HS52",
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        gatt: {
+            connected: true,
+            connect: async () => ({
+                getPrimaryService: async () => ({
+                    getCharacteristic: async (uuid) => {
+                        if ("audio" === uuid)
+                        {
+                            audioDiscoveries++;
+                            throw new Error("characteristic unavailable");
+                        }
+                        return "image" === uuid ? imageCharacteristic : statusCharacteristic;
+                    }
+                })
+            })
+        }
+    });
+
+    assert.equal(await client.connectGatt(), true);
+    assert.equal(audioDiscoveries, 3);
+    assert.deepEqual(waits, [7, 7]);
+    assert.ok(statuses.some(([status, detail]) =>
+        "audio_error" === status && detail.includes("characteristic unavailable")));
+});
+
+test("BLE image flow control stops polling immediately after a device state rejection", async () => {
+    const waits = [];
+    let digestReads = 0;
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        imageDigestCharacteristicUuid: "digest",
+        imageDataSizes: [235],
+        imageFastBurstPackets: 1,
+        imageFlowAckAttempts: 100,
+        imageFlowAckDelayMs: 7,
+        encodeImage: () => [
+            Uint8Array.from([1]),
+            Uint8Array.from([2]),
+            Uint8Array.from([3])
+        ],
+        encodeReset: () => [new Uint8Array(20)],
+        parseImageDigest: () => ({
+            available: false,
+            received: 0,
+            result: 2 <= digestReads ? 103 : 0
+        }),
+        wait: async (milliseconds) => waits.push(milliseconds)
+    });
+
+    client.device = { name: "test", gatt: { connected: true } };
+    client.characteristic = { writeValueWithResponse: async () => {} };
+    client.imageCharacteristic = {
+        writeValueWithResponse: async () => {},
+        writeValueWithoutResponse: async () => {}
+    };
+    client.imageDigestCharacteristic = {
+        readValue: async () => {
+            digestReads++;
+            return new DataView(new ArrayBuffer(32));
+        }
+    };
+    client.latestImage = {
+        revision: "state-rejected",
+        md5: "d41d8cd98f00b204e9800998ecf8427e",
+        data: Uint8Array.from([1, 2, 3])
+    };
+
+    await assert.rejects(client.flushImage(), /result 103/);
+
+    assert.equal(digestReads, 2);
+    assert.deepEqual(waits, [7]);
+    assert.equal(client.syncedImageRevision, null);
+});
+
+test("BLE client defers mascot transfer while hardware audio is active and resumes once", async () => {
+    const writes = [];
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        imageDataSizes: [235],
+        imagePacketDelayMs: 0,
+        encodeImage: () => [Uint8Array.from([1]), Uint8Array.from([2])],
+        encodeReset: () => [new Uint8Array(20)]
+    });
+
+    client.device = { name: "test", gatt: { connected: true } };
+    client.characteristic = { writeValueWithResponse: async () => {} };
+    client.imageCharacteristic = {
+        writeValueWithResponse: async (frame) => writes.push(Array.from(frame))
+    };
+    client.latestImage = {
+        revision: "after-audio",
+        data: Uint8Array.from([1, 2, 3])
+    };
+    client.latestImages.set(0, client.latestImage);
+
+    client.setAudioStreamActive(true);
+    await client.flushImage();
+    assert.deepEqual(writes, []);
+    assert.equal(client.imageSyncPending, true);
+
+    client.setAudioStreamActive(false);
+    await client.writeQueue;
+
+    assert.deepEqual(writes, [[1], [2]]);
+    assert.equal(client.imageSyncPending, false);
+    assert.equal(client.syncedImageRevision, "after-audio");
+});
+
+test("BLE audio control is written with response after pending GATT work", async () => {
+    const events = [];
+    let releasePending;
+    const pending = new Promise((resolve) => {
+        releasePending = resolve;
+    });
+    const client = new AgentPetBleClient({
+        serviceUuid: "service",
+        characteristicUuid: "status",
+        imageCharacteristicUuid: "image",
+        audioCharacteristicUuid: "audio",
+        encodeAudioControl: (active) => Uint8Array.from([active ? 1 : 2])
+    });
+
+    client.device = { name: "test", gatt: { connected: true } };
+    client.characteristic = { writeValueWithResponse: async () => {} };
+    client.imageCharacteristic = { writeValueWithResponse: async () => {} };
+    client.audioCharacteristic = {
+        writeValueWithResponse: async (frame) => events.push(Array.from(frame))
+    };
+    client.writeQueue = pending;
+
+    const request = client.requestAudioStream(true);
+    await Promise.resolve();
+    assert.deepEqual(events, []);
+    assert.equal(client.audioStreamActive, true);
+
+    releasePending();
+    await request;
+    assert.deepEqual(events, [[1]]);
+
+    await client.requestAudioStream(false);
+    assert.deepEqual(events, [[1], [2]]);
 });

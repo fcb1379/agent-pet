@@ -25,6 +25,9 @@ const DEFAULT_RESOURCES = Object.freeze({
 const DEFAULT_HARDWARE = Object.freeze({
     enabled: false
 });
+const DEFAULT_STT = Object.freeze({
+    enabled: true
+});
 
 const DEFAULT_SETTINGS = Object.freeze({
     clickThrough: false,
@@ -36,7 +39,8 @@ const DEFAULT_SETTINGS = Object.freeze({
     position: null,
     animation: DEFAULT_ANIMATION,
     resources: DEFAULT_RESOURCES,
-    hardware: DEFAULT_HARDWARE
+    hardware: DEFAULT_HARDWARE,
+    stt: DEFAULT_STT
 });
 
 function normalizeResources(value = {})
@@ -54,6 +58,13 @@ function normalizeHardware(value = {})
 {
     return {
         enabled: true === value.enabled
+    };
+}
+
+function normalizeStt(value = {})
+{
+    return {
+        enabled: false !== value.enabled
     };
 }
 
@@ -131,7 +142,8 @@ function normalizeSettings(value = {})
         position: normalizePosition(value.position),
         animation: normalizeAnimation(value.animation),
         resources: normalizeResources(value.resources),
-        hardware: normalizeHardware(value.hardware)
+        hardware: normalizeHardware(value.hardware),
+        stt: normalizeStt(value.stt)
     };
 }
 
@@ -168,7 +180,10 @@ class SettingsStore
         const hardware = changes.hardware
             ? { ...this.value.hardware, ...changes.hardware }
             : this.value.hardware;
-        this.value = normalizeSettings({ ...this.value, ...changes, animation, resources, hardware });
+        const stt = changes.stt
+            ? { ...this.value.stt, ...changes.stt }
+            : this.value.stt;
+        this.value = normalizeSettings({ ...this.value, ...changes, animation, resources, hardware, stt });
         fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
         fs.writeFileSync(this.filePath, `${JSON.stringify(this.value, null, 2)}\n`, "utf8");
         return this.value;
@@ -179,6 +194,7 @@ module.exports = {
     ANIMATION_STYLES,
     DEFAULT_ANIMATION,
     DEFAULT_HARDWARE,
+    DEFAULT_STT,
     DEFAULT_RESOURCES,
     DEFAULT_SETTINGS,
     SettingsStore,
@@ -186,5 +202,6 @@ module.exports = {
     normalizeHardware,
     normalizePosition,
     normalizeResources,
+    normalizeStt,
     normalizeSettings
 };

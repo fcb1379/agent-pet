@@ -1,13 +1,13 @@
 {
   "name": "agent-pet",
-  "version": "0.5.10",
+  "version": "0.6.0",
   "description": "A desktop pet that reflects Codex and Claude Code activity on Windows, WSL and macOS.",
   "main": "src/main.js",
   "type": "commonjs",
   "scripts": {
-    "prestart": "node scripts/dependency-bootstrap.js",
+    "prestart": "node scripts/prepare-launch.js",
     "start": "node scripts/run-electron.js",
-    "predev": "node scripts/dependency-bootstrap.js",
+    "predev": "node scripts/prepare-launch.js",
     "dev": "node scripts/run-electron.js --dev",
     "postinstall": "node scripts/dependency-bootstrap.js --stamp",
     "setup": "npm ci --no-audit --no-fund",
@@ -15,7 +15,9 @@
     "install-hooks": "node scripts/install-hooks.js",
     "uninstall-hooks": "node scripts/uninstall-hooks.js",
     "simulate": "node scripts/simulate.js",
+    "prepare:stt": "node scripts/prepare-stt-runtime.js",
     "dist": "npm run dist:win",
+    "predist:win": "node scripts/prepare-stt-runtime.js",
     "dist:win": "electron-builder --win portable",
     "dist:mac": "electron-builder --mac dmg --arm64 --publish never"
   },
@@ -41,6 +43,15 @@
     ],
     "win": {
       "icon": "assets/icon.ico",
+      "extraResources": [
+        {
+          "from": "vendor/stt",
+          "to": "stt",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
       "target": [
         "portable"
       ],
@@ -65,6 +76,7 @@
     }
   },
   "dependencies": {
+    "ogg-opus-decoder": "^1.7.3",
     "sharp": "^0.34.5",
     "upng-js": "^2.1.0"
   },

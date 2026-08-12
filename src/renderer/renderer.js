@@ -34,6 +34,14 @@ const meritToast = document.getElementById("merit-toast");
 const woodenFishSound = document.getElementById("wooden-fish-sound");
 const clickSpeedLabel = document.getElementById("click-speed-label");
 const dailyMeritSummary = document.getElementById("daily-merit-summary");
+const transcriptionPanel = document.getElementById("transcription-panel");
+const transcriptionStatus = document.getElementById("transcription-status");
+const transcriptionDetail = document.getElementById("transcription-detail");
+const conversationInput = document.getElementById("conversation-input");
+const transcriptionCopy = document.getElementById("transcription-copy");
+const transcriptionClear = document.getElementById("transcription-clear");
+const transcriptionClose = document.getElementById("transcription-close");
+const transcriptionToggle = document.getElementById("transcription-toggle");
 
 const hardwareButton = document.getElementById("hardware-button");
 const hardwareProtocol = window.AgentPetHardwareProtocol;
@@ -57,17 +65,183 @@ let lastWoodenFishHitAt = 0;
 let dailyMeritSummaryTimer = null;
 let hardwareImageRequest = 0;
 let hardwareEnabled = false;
+let transcriptionSessionId = null;
+let transcriptionUserEdited = false;
+let transcriptionControlState = "idle";
+let transcriptionStartTimer = null;
+let transcriptionDismissAfterStop = false;
+let localSttRuntimeReady = false;
+const TRANSCRIPTION_START_TIMEOUT_MS = 8000;
 const defaultMascotUrl = mascot.src;
 const HOVER_ACTIONS = ["hop", "wave", "spin", "squash"];
 const DAILY_MERIT_STORAGE_KEY = "agent-pet.daily-merit.v1";
 const WOODEN_FISH_IDLE_MS = 950;
+const TRANSCRIPTION_STATUS = Object.freeze({
+    idle: "等待录音",
+    listening: "正在接收录音",
+    transcribing: "本地识别中…",
+    complete: "转写完成",
+    error: "转写失败"
+});
+function clearTranscriptionStartTimer()
+{
+    clearTimeout(transcriptionStartTimer);
+    transcriptionStartTimer = null;
+}
+
+function updateTranscriptionToggle()
+{
+    const connected = hardwareClient.isConnected();
+    const presentations = {
+        idle: ["\uD83C\uDFA4 \u5F00\u59CB\u8F6C\u5199", "\u4F7F\u7528\u8BBE\u5907\u9EA6\u514B\u98CE\u5F00\u59CB\u672C\u5730\u8F6C\u5199"],
+        starting: ["\u542F\u52A8\u4E2D\u2026", "\u6B63\u5728\u542F\u52A8\u8BBE\u5907\u9EA6\u514B\u98CE"],
+        active: ["\u25A0 \u505C\u6B62\u8F6C\u5199", "\u505C\u6B62\u91C7\u96C6\u5E76\u63D0\u4EA4\u672C\u5730\u8F6C\u5199"],
+        stopping: ["\u505C\u6B62\u4E2D\u2026", "\u6B63\u5728\u7ED3\u675F\u8BBE\u5907\u91C7\u96C6"]
+    };
+    const presentation = presentations[transcriptionControlState] || presentations.idle;
+
+    transcriptionToggle.hidden = !hardwareEnabled;
+    transcriptionToggle.dataset.state = transcriptionControlState;
+    transcriptionToggle.textContent = presentation[0];
+    transcriptionToggle.title = presentation[1];
+    transcriptionToggle.disabled = "starting" === transcriptionControlState ||
+        "stopping" === transcriptionControlState ||
+        ("idle" === transcriptionControlState && (!connected || !localSttRuntimeReady));
+}
+
+async function requestTranscriptionStop(dismissAfterStop = false)
+{
+    if (dismissAfterStop)
+    {
+        transcriptionDismissAfterStop = true;
+    }
+    if ("active" !== transcriptionControlState)
+    {
+        return false;
+    }
+
+    transcriptionControlState = "stopping";
+    updateTranscriptionToggle();
+    try
+    {
+        await hardwareClient.requestAudioStream(false);
+        return true;
+    }
+    catch (error)
+    {
+        transcriptionControlState = "active";
+        if (dismissAfterStop)
+        {
+            transcriptionDismissAfterStop = false;
+        }
+        updateTranscriptionToggle();
+        applyLocalSttUpdate({
+            status: "error",
+            text: conversationInput.value,
+            error: error.message,
+            sessionId: transcriptionSessionId,
+            isFinal: false
+        });
+        return false;
+    }
+}
+
+function failTranscriptionControl(error)
+{
+    const dismissPanel = transcriptionDismissAfterStop;
+    transcriptionDismissAfterStop = false;
+    clearTranscriptionStartTimer();
+    transcriptionControlState = "idle";
+    hardwareClient.setAudioStreamActive(false);
+    updateTranscriptionToggle();
+    if (dismissPanel)
+    {
+        void window.agentPet.clearLocalTranscription();
+        return;
+    }
+    applyLocalSttUpdate({
+        status: "error",
+        text: conversationInput.value,
+        error: error.message,
+        sessionId: transcriptionSessionId,
+        isFinal: false
+    });
+}
+
+const hardwareAudioReceiver = new window.AgentPetHardwareAudio.HardwareAudioReceiver({
+    onStart: async () => {
+        if ("starting" !== transcriptionControlState)
+        {
+            throw new Error("Unexpected hardware audio stream");
+        }
+        clearTranscriptionStartTimer();
+        transcriptionControlState = "active";
+        hardwareClient.setAudioStreamActive(true);
+        updateTranscriptionToggle();
+        const result = await window.agentPet.startLocalTranscription({
+            mimeType: "audio/ogg",
+            source: "hardware"
+        });
+        if (transcriptionDismissAfterStop)
+        {
+            void requestTranscriptionStop(true);
+        }
+
+        return result;
+    },
+    onChunk: (chunk) => window.agentPet.appendLocalTranscriptionChunk(chunk),
+    onFinish: async () => {
+        try
+        {
+            return await window.agentPet.finishLocalTranscription();
+        }
+        finally
+        {
+            const dismissPanel = transcriptionDismissAfterStop;
+            transcriptionDismissAfterStop = false;
+            transcriptionControlState = "idle";
+            hardwareClient.setAudioStreamActive(false);
+            updateTranscriptionToggle();
+            if (dismissPanel)
+            {
+                await window.agentPet.clearLocalTranscription();
+            }
+        }
+    },
+    onCancel: async () => {
+        try
+        {
+            return await window.agentPet.cancelLocalTranscription();
+        }
+        finally
+        {
+            clearTranscriptionStartTimer();
+            const dismissPanel = transcriptionDismissAfterStop;
+            transcriptionDismissAfterStop = false;
+            transcriptionControlState = "idle";
+            hardwareClient.setAudioStreamActive(false);
+            updateTranscriptionToggle();
+            if (dismissPanel)
+            {
+                await window.agentPet.clearLocalTranscription();
+            }
+        }
+    },
+    onError: (error) => {
+        failTranscriptionControl(error);
+    }
+});
 const hardwareClient = new window.AgentPetBleClient({
     serviceUuid: hardwareProtocol.SERVICE_UUID,
     characteristicUuid: hardwareProtocol.STATUS_RX_UUID,
     imageCharacteristicUuid: hardwareProtocol.IMAGE_RX_UUID,
     imageDigestCharacteristicUuid: hardwareProtocol.IMAGE_DIGEST_UUID,
     meritCharacteristicUuid: hardwareProtocol.DAILY_MERIT_UUID,
+    audioCharacteristicUuid: hardwareProtocol.AUDIO_STREAM_UUID,
+    onAudioFrame: (frame) => hardwareAudioReceiver.push(frame),
+    onAudioDisconnect: () => hardwareAudioReceiver.disconnect(),
     encodeImage: hardwareProtocol.encodeMascotImage,
+    encodeAudioControl: hardwareProtocol.encodeAudioControl,
     imageDataSizes: hardwareProtocol.IMAGE_DATA_SIZES,
     enabled: false,
     encodeReset: hardwareProtocol.encodeMascotReset,
@@ -102,6 +276,7 @@ const hardwareClient = new window.AgentPetBleClient({
         {
             hardwareButton.setAttribute("aria-label", `BLE 错误：${detail || "未知错误"}`);
         }
+        updateTranscriptionToggle();
     }
 });
 const CLICK_SPEEDS = Object.freeze([
@@ -444,6 +619,11 @@ function applyHardwareSettings(settings)
     hardwareEnabled = enabled;
     hardwareButton.hidden = !hardwareEnabled;
     hardwareClient.setEnabled(hardwareEnabled);
+    updateTranscriptionToggle();
+    if (hardwareEnabled)
+    {
+        void hardwareClient.restoreAuthorizedDevice();
+    }
 
     if (!hardwareEnabled)
     {
@@ -693,7 +873,55 @@ function submitApproval(decision)
     }
 }
 
+function applyLocalSttUpdate(update)
+{
+    const next = update || { status: "idle", text: "", isFinal: false };
+    const status = Object.hasOwn(TRANSCRIPTION_STATUS, next.status) ? next.status : "error";
+    const text = "string" === typeof next.text ? next.text : "";
+    const visible = "idle" !== status || 0 < text.length;
+    const active = ["listening", "transcribing"].includes(status);
+
+    if (null !== next.sessionId && undefined !== next.sessionId &&
+        next.sessionId !== transcriptionSessionId)
+    {
+        transcriptionSessionId = next.sessionId;
+        transcriptionUserEdited = false;
+        conversationInput.value = "";
+    }
+    if (active || !transcriptionUserEdited)
+    {
+        conversationInput.value = text;
+    }
+
+    window.agentPet.setTranscriptionPanelOpen(visible);
+    transcriptionPanel.hidden = !visible;
+    document.body.classList.toggle("has-transcription", visible);
+    transcriptionStatus.textContent = TRANSCRIPTION_STATUS[status];
+    transcriptionStatus.dataset.status = status;
+    conversationInput.readOnly = active;
+    transcriptionCopy.disabled = 0 === conversationInput.value.trim().length;
+
+    if ("error" === status)
+    {
+        transcriptionDetail.textContent = next.error || "请检查本地 STT 服务";
+    }
+    else if ("complete" === status)
+    {
+        transcriptionDetail.textContent = "可编辑或复制到目标对话";
+    }
+    else
+    {
+        transcriptionDetail.textContent = "音频仅发送到本机 STT 服务";
+    }
+}
+
 window.agentPet.onState(applyState);
+function applyLocalSttRuntime(update)
+{
+    localSttRuntimeReady = true === update?.ready;
+    updateTranscriptionToggle();
+}
+
 window.agentPet.onTypingActivity((active) => {
     typingActive = true === active;
     applyState(latestSnapshot);
@@ -720,7 +948,12 @@ window.agentPet.onPositionAdjustMode((active) => {
     document.body.classList.toggle("is-position-adjusting", positionAdjusting);
     applyState(latestSnapshot);
 });
+window.agentPet.onLocalSttUpdate(applyLocalSttUpdate);
 
+window.agentPet.onLocalSttRuntimeUpdate(applyLocalSttRuntime);
+void window.agentPet.getLocalSttRuntimeStatus()
+    .then(applyLocalSttRuntime)
+    .catch(() => applyLocalSttRuntime({ ready: false }));
 mascot.addEventListener("mouseenter", playRandomHoverAnimation);
 
 // 手动窗口拖动：mascot 因 -webkit-app-region: no-drag 不参与原生拖动，
@@ -801,9 +1034,77 @@ document.getElementById("session-details-close").addEventListener("click", () =>
 clearFinishedButton.addEventListener("click", () => window.agentPet.clearFinishedSessions());
 document.getElementById("approval-allow").addEventListener("click", () => submitApproval("allow"));
 document.getElementById("approval-deny").addEventListener("click", () => submitApproval("deny"));
+conversationInput.addEventListener("input", () => {
+    transcriptionUserEdited = true;
+    transcriptionCopy.disabled = 0 === conversationInput.value.trim().length;
+});
+transcriptionCopy.addEventListener("click", async () => {
+    if (!conversationInput.value.trim())
+    {
+        return;
+    }
+    await window.agentPet.copyText(conversationInput.value);
+    transcriptionCopy.textContent = "已复制";
+    setTimeout(() => {
+        transcriptionCopy.textContent = "复制";
+    }, 1200);
+});
+transcriptionClear.addEventListener("click", () => {
+    transcriptionUserEdited = false;
+    void window.agentPet.clearLocalTranscription();
+});
+transcriptionClose.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    if ("starting" === transcriptionControlState)
+    {
+        transcriptionDismissAfterStop = true;
+        return;
+    }
+    if ("active" === transcriptionControlState)
+    {
+        await requestTranscriptionStop(true);
+        return;
+    }
+    if ("stopping" === transcriptionControlState)
+    {
+        transcriptionDismissAfterStop = true;
+        return;
+    }
+
+    transcriptionDismissAfterStop = false;
+    transcriptionUserEdited = false;
+    await window.agentPet.clearLocalTranscription();
+});
+transcriptionToggle.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    if ("idle" === transcriptionControlState)
+    {
+        if (!hardwareClient.isConnected() || !localSttRuntimeReady)
+        {
+            return;
+        }
+        transcriptionControlState = "starting";
+        updateTranscriptionToggle();
+        transcriptionStartTimer = setTimeout(() => {
+            void hardwareClient.requestAudioStream(false).catch(() => {});
+            failTranscriptionControl(new Error("\u8BBE\u5907\u672A\u5728\u9650\u65F6\u5185\u5F00\u59CB\u91C7\u96C6\uFF0C\u8BF7\u68C0\u67E5\u8BBE\u5907\u5F55\u97F3\u529F\u80FD\u662F\u5426\u6B63\u5728\u4F7F\u7528\u9EA6\u514B\u98CE"));
+        }, TRANSCRIPTION_START_TIMEOUT_MS);
+        try
+        {
+            await hardwareClient.requestAudioStream(true);
+        }
+        catch (error)
+        {
+            failTranscriptionControl(error);
+        }
+        return;
+    }
+    await requestTranscriptionStop();
+});
 hardwareButton.addEventListener("keydown", (event) => event.stopPropagation());
 hardwareButton.addEventListener("click", async (event) => {
     event.stopPropagation();
+
     if (!hardwareEnabled)
     {
         return;

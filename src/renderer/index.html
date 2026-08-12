@@ -13,6 +13,8 @@
             <span id="status-message">等你派任务给我</span>
         </section>
 
+        <button id="transcription-toggle" type="button"
+            title="&#20351;&#29992;&#35774;&#22791;&#40614;&#20811;&#39118;&#24320;&#22987;&#26412;&#22320;&#36716;&#20889;" hidden>&#127897; &#24320;&#22987;&#36716;&#20889;</button>
         <section id="pet-stage">
             <div id="effect-layer">
                 <span class="effect effect-one">✦</span>
@@ -89,10 +91,25 @@
         <small>Ctrl+Shift+Enter 允许 · Ctrl+Shift+Backspace 拒绝</small>
     </section>
 
+    <section id="transcription-panel" hidden aria-label="本地语音转写">
+        <header>
+            <strong>对话输入</strong>
+            <span id="transcription-status">等待录音</span>
+        </header>
+        <button id="transcription-close" type="button" title="&#20851;&#38381;&#23454;&#26102;&#36716;&#20889;" aria-label="&#20851;&#38381;&#23454;&#26102;&#36716;&#20889;">&#215;</button>
+        <textarea id="conversation-input" rows="3" placeholder="本地语音转写结果会显示在这里" spellcheck="false"></textarea>
+        <div class="transcription-actions">
+            <button id="transcription-copy" type="button" disabled>复制</button>
+            <button id="transcription-clear" type="button">清空</button>
+        </div>
+        <small id="transcription-detail">音频仅发送到本机 STT 服务</small>
+    </section>
+
     <button id="hide-button" title="隐藏">×</button>
     <script src="pointer-hit-policy.js"></script>
     <script src="pointer-hit.js"></script>
     <script src="../hardware-protocol.js"></script>
+    <script src="../hardware-audio.js"></script>
     <script src="ble-client.js"></script>
     <script src="hardware-status.js"></script>
     <script src="renderer.js"></script>

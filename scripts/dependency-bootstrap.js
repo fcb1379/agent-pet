@@ -38,7 +38,15 @@ function dependencyStatus(projectDirectory)
         }
         catch (_error)
         {
-            return true;
+            try
+            {
+                require.resolve(name, { paths: [projectDirectory] });
+                return false;
+            }
+            catch (_resolveError)
+            {
+                return true;
+            }
         }
     });
     return {

@@ -6,6 +6,7 @@ const path = require("node:path");
 const {
     app,
     BrowserWindow,
+    clipboard,
     dialog,
     globalShortcut,
     ipcMain,
@@ -20,6 +21,13 @@ const { agentDataDirectory: platformAgentDataDirectory, approvalDirectory: platf
 const { installLocalAi } = require("./ai-setup");
 const { ApprovalStore } = require("./approval-store");
 const { KeyboardActivityMonitor } = require("./keyboard-activity");
+const {
+    DEFAULT_STT_INTERVAL_MS,
+    DEFAULT_STT_LANGUAGE,
+    LocalSttService,
+    MAX_STT_AUDIO_BYTES
+} = require("./local-stt");
+const { SttRuntimeManager } = require("./stt-runtime-manager");
 const { importImageFiles, versionedImageFileUrl } = require("./custom-assets");
 const {
     encodeHardwareMascotGifFrames,
@@ -44,6 +52,8 @@ let stateStore = null;
 let approvalStore = null;
 let keyboardMonitor = null;
 let resourceMonitor = null;
+let localStt = null;
+let sttRuntime = null;
 let settingsStore = null;
 let settings = null;
 let latestApproval = null;
@@ -51,7 +61,10 @@ let latestApprovals = [];
 let latestSnapshot = { state: "idle", sessions: [], counts: {} };
 let typingActive = false;
 let latestResources = null;
+let latestTranscription = { status: "idle", text: "", isFinal: false };
+let latestSttRuntime = { status: "idle", ready: false, progress: null, detail: null };
 let sessionDetailsOpen = false;
+let transcriptionPanelOpen = false;
 let isQuitting = false;
 let setupRunning = false;
 let updateChecking = false;
@@ -205,6 +218,175 @@ async function hardwareMascotPayload()
     };
 }
 
+function transcriptionIsVisible(value = latestTranscription)
+{
+    return Boolean(value && ("idle" !== value.status || value.text));
+}
+
+function publishLocalTranscription(update)
+{
+    const wasVisible = transcriptionIsVisible();
+    latestTranscription = {
+        status: "idle",
+        text: "",
+        isFinal: false,
+        ...(update || {})
+    };
+    const visibilityChanged = wasVisible !== transcriptionIsVisible();
+
+    if (visibilityChanged)
+    {
+        applyWindowSettings();
+    }
+    if (mainWindow && !mainWindow.isDestroyed())
+    {
+        mainWindow.webContents.send("local-stt-update", latestTranscription);
+        if (transcriptionIsVisible())
+        {
+            mainWindow.showInactive();
+        }
+    }
+    rebuildTrayMenu();
+}
+
+function syncLocalStt()
+{
+    if (!localStt || !sttRuntime || !settings)
+    {
+        return;
+    }
+
+    const enabled = settings.stt.enabled && sttRuntime.isReady();
+    localStt.configure({
+        enabled,
+        endpoint: sttRuntime.endpoint,
+        language: DEFAULT_STT_LANGUAGE,
+        intervalMs: DEFAULT_STT_INTERVAL_MS
+    });
+    if (!settings.stt.enabled)
+    {
+        sttRuntime.stop();
+        return;
+    }
+    if (!sttRuntime.isReady())
+    {
+        void sttRuntime.start().catch(() => {});
+    }
+}
+
+function publishLocalSttRuntime(update)
+{
+    latestSttRuntime = {
+        status: "idle",
+        ready: false,
+        progress: null,
+        detail: null,
+        ...(update || {})
+    };
+    if (localStt && settings)
+    {
+        localStt.configure({
+            enabled: settings.stt.enabled && true === latestSttRuntime.ready,
+            endpoint: latestSttRuntime.endpoint,
+            language: DEFAULT_STT_LANGUAGE,
+            intervalMs: DEFAULT_STT_INTERVAL_MS
+        });
+    }
+    if (mainWindow && !mainWindow.isDestroyed())
+    {
+        mainWindow.webContents.send("local-stt-runtime", latestSttRuntime);
+    }
+    rebuildTrayMenu();
+}
+
+function startLocalTranscription(options)
+{
+    if (!settings.stt.enabled)
+    {
+        throw new Error("本地语音转写已停用");
+    }
+    if (!sttRuntime || !sttRuntime.isReady())
+    {
+        syncLocalStt();
+        const detail = "error" === latestSttRuntime.status
+            ? latestSttRuntime.detail
+            : "本地语音转写正在自动加载，请稍后重试";
+        throw new Error(detail || "本地语音转写尚未就绪");
+    }
+    return localStt.start(options);
+}
+
+function localSttRuntimeLabel()
+{
+    if ("preparing" === latestSttRuntime.status && Number.isInteger(latestSttRuntime.progress))
+    {
+        return `状态：正在准备 ${latestSttRuntime.progress}%`;
+    }
+    return {
+        idle: settings?.stt.enabled ? "状态：等待启动" : "状态：已停用",
+        preparing: "状态：正在准备运行环境",
+        starting: "状态：正在加载中文模型",
+        ready: "状态：已就绪",
+        restarting: "状态：正在自动恢复",
+        error: "状态：启动失败"
+    }[latestSttRuntime.status] || "状态：正在初始化";
+}
+
+function audioMimeType(filePath)
+{
+    const extension = path.extname(filePath).toLowerCase();
+    return {
+        ".ogg": "audio/ogg",
+        ".opus": "audio/opus",
+        ".wav": "audio/wav",
+        ".mp3": "audio/mpeg"
+    }[extension] || "audio/ogg";
+}
+
+async function transcribeAudioFile()
+{
+    if (!localStt || !settings.stt.enabled || !sttRuntime?.isReady())
+    {
+        return;
+    }
+    const result = await dialog.showOpenDialog(mainWindow, {
+        title: "选择音频文件测试本地语音转写",
+        properties: ["openFile"],
+        filters: [
+            { name: "音频", extensions: ["ogg", "opus", "wav", "mp3"] }
+        ]
+    });
+    if (result.canceled || !result.filePaths[0])
+    {
+        return;
+    }
+
+    const filePath = result.filePaths[0];
+    try
+    {
+        const stat = fs.statSync(filePath);
+        if (!stat.isFile() || 0 === stat.size || MAX_STT_AUDIO_BYTES < stat.size)
+        {
+            throw new Error(`音频文件必须小于 ${MAX_STT_AUDIO_BYTES / 1024 / 1024} MB`);
+        }
+        const audio = fs.readFileSync(filePath);
+        startLocalTranscription({ mimeType: audioMimeType(filePath) });
+        for (let offset = 0; offset < audio.length; offset += 256 * 1024)
+        {
+            localStt.append(audio.subarray(offset, Math.min(audio.length, offset + (256 * 1024))));
+        }
+        await localStt.finish();
+    }
+    catch (error)
+    {
+        if (localStt.isActive())
+        {
+            localStt.cancel();
+        }
+        dialog.showErrorBox("本地语音转写失败", error.message);
+    }
+}
+
 async function hardwareMascotPayloads()
 {
     const images = [{ slot: 0, ...await hardwareMascotPayload() }];
@@ -300,7 +482,9 @@ function createTrayImage(state)
 
 function currentBaseSize()
 {
-    return BASE_SIZES[settings.displayMode] || BASE_SIZES.pet;
+    return transcriptionIsVisible()
+        ? BASE_SIZES.pet
+        : (BASE_SIZES[settings.displayMode] || BASE_SIZES.pet);
 }
 
 function placeWindow(forceDefault = false)
@@ -398,6 +582,7 @@ function applyInteractionMode()
         hasApproval: Boolean(latestApproval),
         positionAdjusting,
         sessionDetailsOpen,
+        transcriptionPanelOpen,
         rendererHitActive
     });
     mainWindow.setIgnoreMouseEvents(ignoreMouse, { forward: true });
@@ -427,6 +612,7 @@ function applyWindowSettings()
 function updateSettings(changes)
 {
     settings = settingsStore.update(changes);
+    syncLocalStt();
     if (false === settings.clickThrough && positionAdjusting)
     {
         setPositionAdjusting(false);
@@ -1037,6 +1223,37 @@ function rebuildTrayMenu()
             checked: settings.hardware.enabled,
             click: (item) => updateSettings({ hardware: { enabled: item.checked } })
         },
+        {
+            label: "本地语音转写",
+            submenu: [
+                {
+                    label: "启用本地 STT",
+                    type: "checkbox",
+                    checked: settings.stt.enabled,
+                    click: (item) => updateSettings({ stt: { enabled: item.checked } })
+                },
+                {
+                    label: "选择音频文件测试…",
+                    enabled: settings.stt.enabled && true === latestSttRuntime.ready &&
+                        !(localStt && localStt.isActive()),
+                    click: transcribeAudioFile
+                },
+                {
+                    label: localSttRuntimeLabel(),
+                    enabled: false
+                },
+                {
+                    label: "重新加载本地 STT",
+                    visible: "error" === latestSttRuntime.status,
+                    click: () => sttRuntime && void sttRuntime.retry().catch(() => {})
+                },
+                {
+                    label: "清空转写稿",
+                    enabled: transcriptionIsVisible(),
+                    click: () => localStt && localStt.clear()
+                }
+            ]
+        },
         { type: "separator" },
         {
             label: sessionDetailsOpen ? "关闭会话详情" : `查看 ${latestSnapshot.sessions.length} 个会话详情  Ctrl+Shift+Alt+S`,
@@ -1157,6 +1374,8 @@ function createWindow()
         mainWindow.webContents.send("approval-requests", latestApprovals);
         mainWindow.webContents.send("resource-usage", latestResources);
         mainWindow.webContents.send("position-adjust-mode", positionAdjusting);
+        mainWindow.webContents.send("local-stt-update", latestTranscription);
+        mainWindow.webContents.send("local-stt-runtime", latestSttRuntime);
     });
     mainWindow.on("show", () => {
         maintainWindowLayer();
@@ -1241,6 +1460,14 @@ else
         fs.mkdirSync(approvalDirectory(), { recursive: true });
         settingsStore = new SettingsStore(path.join(app.getPath("userData"), "settings.json"));
         settings = settingsStore.load();
+        localStt = new LocalSttService({ enabled: false });
+        localStt.on("update", publishLocalTranscription);
+        sttRuntime = new SttRuntimeManager({
+            resourcesPath: process.resourcesPath,
+            userDataPath: app.getPath("userData"),
+            developmentRoot: path.resolve(__dirname, "..")
+        });
+        sttRuntime.on("update", publishLocalSttRuntime);
         try
         {
             await migrateLegacyHoverAnimation();
@@ -1252,6 +1479,7 @@ else
 
         createWindow();
         createTray();
+        syncLocalStt();
 
         stateStore = new StateStore(stateDirectory());
         stateStore.on("change", publishSnapshot);
@@ -1280,6 +1508,15 @@ else
             rendererHitActive = nextHitActive;
             applyInteractionMode();
         });
+        ipcMain.on("transcription-panel-state", (_event, open) => {
+            const nextOpen = true === open;
+            if (transcriptionPanelOpen === nextOpen)
+            {
+                return;
+            }
+            transcriptionPanelOpen = nextOpen;
+            applyInteractionMode();
+        });
         ipcMain.on("hide-window", () => {
             mainWindow.hide();
             rebuildTrayMenu();
@@ -1296,6 +1533,18 @@ else
         });
         ipcMain.handle("hardware-mascot-image", () => hardwareMascotPayload());
         ipcMain.handle("hardware-mascot-images", () => hardwareMascotPayloads());
+        ipcMain.handle("local-stt-runtime-status", () => latestSttRuntime);
+        ipcMain.handle("local-stt-runtime-retry", () => sttRuntime.retry());
+        ipcMain.handle("local-stt-start", (_event, options) => startLocalTranscription(options));
+        ipcMain.handle("local-stt-chunk", (_event, chunk) => localStt.append(chunk));
+        ipcMain.handle("local-stt-finish", () => localStt.finish());
+        ipcMain.handle("local-stt-cancel", () => localStt.cancel());
+        ipcMain.handle("local-stt-clear", () => localStt.clear());
+        ipcMain.handle("copy-text", (_event, value) => {
+            const text = String(value || "").slice(0, 100000);
+            clipboard.writeText(text);
+            return true;
+        });
         ipcMain.handle("dismiss-session", (_event, payload) => {
             if (payload && "object" === typeof payload)
             {
@@ -1345,6 +1594,14 @@ app.on("before-quit", () => {
     if (resourceMonitor)
     {
         resourceMonitor.stop();
+    }
+    if (localStt)
+    {
+        localStt.cancel();
+    }
+    if (sttRuntime)
+    {
+        sttRuntime.stop();
     }
 });
 
